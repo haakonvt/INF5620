@@ -68,7 +68,7 @@ def simulate(
 			plt.gca().set_aspect('equal') # Set axis equal
 			plt.plot(x,y,'b',x_nel,y_nel,'r')
 			plt.legend(["Elastic pendulum","Non-elastic pendulum"])
-			plt.title("Comparison vith non-elastic pend.")
+			plt.title("Comparison with non-elastic pend.")
 			plt.subplot(212)
 			plt.plot(t,thetas,'b',t,theta_nel,'r')
 			plt.legend(["Elastic pendulum","Non-elastic pendulum"])
