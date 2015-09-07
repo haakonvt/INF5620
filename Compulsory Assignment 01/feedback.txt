@@ -1,0 +1,22 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Mon Sep  7 15:14:49 2015
+
+@author: Vigdis
+"""
+
+vib_undamped_verify_mms:
+
+
+residual step1 should be 0 for quadratic?
+
+Passed: The program does all it's supposed to do, even though there are some
+errors in the results. Some nice plots are also included. It is easy to read 
+and understand.
+
+
+elastic_pendulum:
+
+Need to label axis.
+
+Passed: Did all the tests. Nice plots, looks good. :-)))))))

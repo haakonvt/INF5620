@@ -91,8 +91,8 @@ if __name__ == '__main__':
 
 	# --- Compute residuals ---
 	#linear()
-	quad(a=1,b=dudt0,c=u0)
-	#deg3()
+	#quad(a=1,b=dudt0,c=u0)
+	deg3()
 	
 	t_vals    = np.linspace(0,T-dt_n,int(N)) 
 	u_n = solver(dt_n,T,u0,dudt0,w_n,N)
