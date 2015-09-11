@@ -57,24 +57,24 @@ pi = np.pi
 
 #Initial conditions
 A = 1.0
-m = 9.0
+m = 3.0
 L = 12.0
 c = 2.0
-T = 10.0*2*pi/(pi*m*c/L)
+T = 2.0*2*pi/(pi*m*c/L)
 
 I = lambda x: A*np.sin(pi*m*x/L)          # u(x,t=0)
 V = lambda x: (A*pi*m/L)*np.cos(pi*m*x/L) # v(x,t=0)
 f = 0                                     # Source term
 
 Nx = 80    # Grid in spatial dimension
-dt = 0.01  # Timestep
+dt = 0.1  # Timestep
 C  = 0.8   # Courant number
 
 umin = 1.2*A
 umax = -umin
 global err_list
 err_list = []
-cpu = viz(I,0,f,c,L,dt,C,T,umin,umax,animate=False)
+cpu = viz(I,0,f,c,L,dt,C,T,umin,umax,animate=True)
 
 plt.plot(err_list)
 plt.show()
