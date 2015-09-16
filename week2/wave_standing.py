@@ -33,12 +33,36 @@ def viz(I, V, f, c, L, dt, C, T, umin, umax, animate=True):
                  axis=[0, (len(x)-1)/2.0, -axis_max, axis_max],
                  title='t=%f' % t[n], legend='Absolute error',
                  show=True)
+    def plot_both(u,x,t,n):
+        u_e      = u_exact(x,t,n)
+        max_diff = ((u-u_e)).max()
+        err_list.append(max_diff)
+        print "At t= %.2f, maximum error: %.4E" %(t[n],max_diff)
+
+        axis_max = 0.00073*len(t) # Experimentally found (max_err scales ~linearly)
+        plt.subplot(211)
+        plt.plot(x, u, 'r-', x, u_e, 'bo',
+                 xlabel='x', ylabel='u',
+                 axis=[0, L, umin, umax],
+                 title='t=%f' % t[n], legend=['numerical sol.', 'Exact sol.'])
+        plt.subplot(212)
+        plt.plot(x, u-u_e, 'r-',
+                 xlabel='x', ylabel='u_{num}-u_{exact}',
+                 axis=[0, (len(x)-1)/2.0, -axis_max, axis_max],
+                 legend='Absolute error',
+                 show=True)
+
 
     # Clean up old movie frames
     for filename in glob.glob('frame_*.png'):
         os.remove(filename)
 
-    user_action = plot_u if animate else write_error
+    # Choose user_action
+    if animate == None:
+        user_action = plot_both
+    else:
+        user_action = plot_u if animate else write_error
+    # Let the magic happen
     u, x, t, cpu = solver(I, V, f, c, L, dt, C, T, user_action)
 
 
@@ -70,7 +94,9 @@ umin = 1.2*A
 umax = -umin
 global err_list
 err_list = []
-user_action = False # True = plot solution vs exact. False = plot error
+
+# True = plot solution vs exact. False = plot error. None = plot both
+user_action = None
 cpu = viz(I,0,f,c,L,dt,C,T,umin,umax,user_action)
 
 if user_action == False:
