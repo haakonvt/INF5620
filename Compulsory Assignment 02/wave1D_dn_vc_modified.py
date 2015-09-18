@@ -171,62 +171,6 @@ def solver(I, V, f, c, U_0, U_L, L, Nx, C, T,
     return u, x, t, cpu_time
 
 
-import nose.tools as nt
-
-def test_quadratic():
-    """
-    Check the scalar and vectorized versions work for
-    a quadratic u(x,t)=x(L-x)(1+t/2) that is exactly reproduced,
-    provided c(x) is constant.
-    We simulate in [0, L/2] and apply a symmetry condition
-    at the end x=L/2.
-    """
-    exact_solution = lambda x, t: x*(L-x)*(1+0.5*t)
-    I = lambda x: exact_solution(x, 0)
-    V = lambda x: 0.5*exact_solution(x, 0)
-    f = lambda x, t: 2*(1+0.5*t)*c**2
-    U_0 = lambda t: exact_solution(0, t)
-    U_L = None
-    L = 2.5
-    c = 1.5
-    Nx = 3  # very coarse mesh
-    C = 1
-    T = 18  # long time integration
-
-    def assert_no_error(u, x, t, n):
-        u_e = exact_solution(x, t[n])
-        diff = abs(u - u_e).max()
-        #print n, diff
-        #print u
-        #print u_e
-        nt.assert_almost_equal(diff, 0, places=13)
-
-    solver(I, V, f, c, U_0, U_L, L/2, Nx, C, T,
-           user_action=assert_no_error, version='scalar',
-           dt_safety_factor=1)
-    solver(I, V, f, c, U_0, U_L, L/2, Nx, C, T,
-           user_action=assert_no_error, version='vectorized',
-           dt_safety_factor=1)
-
-def test_plug():
-    """Check that an initial plug is correct back after one period."""
-    L = 1
-    I = lambda x: 0 if abs(x-L/2.0) > 0.1 else 1
-
-    u_s, x, t, cpu = solver(
-        I=I,
-        V=None, f=None, c=0.5, U_0=None, U_L=None, L=L,
-        Nx=50, C=1, T=4, user_action=None, version='scalar')
-    u_v, x, t, cpu = solver(
-        I=I,
-        V=None, f=None, c=0.5, U_0=None, U_L=None, L=L,
-        Nx=50, C=1, T=4, user_action=None, version='vectorized')
-    diff = abs(u_s - u_v).max()
-    nt.assert_almost_equal(diff, 0, places=13)
-    u_0 = array([I(x_) for x_ in x])
-    diff = abs(u_s - u_0).max()
-    nt.assert_almost_equal(diff, 0, places=13)
-
 
 class PlotSolution:
     """
@@ -256,6 +200,7 @@ class PlotSolution:
             os.remove(filename)
 
     def __call__(self, u, x, t, n):
+        """Plotting and visualization"""
         if n % self.every_frame != 0:
             return
         title = 't=%f' % t[n]
@@ -275,7 +220,8 @@ class PlotSolution:
                 pause = 0.2 if u.size < 100 else 0
             time.sleep(pause)
 
-        self.plt.savefig('%s_frame_%04d.png' % (self.casename, n))
+        #self.plt.savefig('%s_frame_%04d.png' % (self.casename, n))
+
 
     def make_movie_file(self):
         """
@@ -308,52 +254,6 @@ class PlotSolution:
             os.system(cmd)
         os.chdir(os.pardir)  # move back to parent directory
 
-def demo_BC_plug(C=1, Nx=40, T=4):
-    """Demonstrate u=0 and u_x=0 boundary conditions with a plug."""
-    action = PlotSolution('plug', -1.3, 1.3, every_frame=1,
-                          title='Left: u=0, right: du/dn=0.')
-    L = 1
-    solver(I=lambda x: 0 if abs(x-L/2.0) > 0.1 else 1,
-           V=0, f=0, c=1, U_0=lambda t: 0, U_L=None, L=L,
-           Nx=Nx, C=C, T=T,
-           user_action=action, version='vectorized',
-           dt_safety_factor=1)
-    action.make_movie_file()
-
-def demo_BC_gaussian(C=1, Nx=80, T=4):
-    """Demonstrate u=0 and u_x=0 boundary conditions with a bell function."""
-    action = PlotSolution('gaussian', -1.3, 1.3, every_frame=1,
-                          title='Left: u=0, right: du/dn=0.')
-    L = 1
-    solver(I=lambda x: exp(-0.5*((x-0.5)/0.05)**2),
-           V=0, f=0, c=1, U_0=lambda t: 0, U_L=None, L=L,
-           Nx=Nx, C=C, T=T,
-           user_action=action, version='vectorized',
-           dt_safety_factor=1)
-    action.make_movie_file()
-
-def moving_end(C=1, Nx=50, reflecting_right_boundary=True,
-               version='vectorized'):
-    L = 1.
-    c = 1
-    T = 3
-    I = lambda x: 0
-    V = 0
-    f = 0
-
-    def U_0(t):
-        return 0.25*sin(6*pi*t) if t < 1./3 else 0
-
-    if reflecting_right_boundary:
-        U_L = None
-    else:
-        U_L = 0
-
-    action = PlotSolution('moving_end', -1, 1, every_frame=4)
-    solver(I, V, f, c, U_0, U_L, L, Nx, C, T,
-           user_action=action, version=version,
-           dt_safety_factor=1)
-
 
 class PlotMediumAndSolution(PlotSolution):
     def __init__(self, medium, **kwargs):
@@ -370,16 +270,20 @@ class PlotMediumAndSolution(PlotSolution):
         title = 'Nx=%d, t=%f' % (x.size-1, t[n])
         if self.title:
             title = self.title + ' ' + title
-        self.plt.plot(x, u, 'r-',
-                      [x_L, x_L], [umin, umax], 'k--',
-                      [x_R, x_R], [umin, umax], 'k--',
+
+        L = 1.0
+        #qsqrt = sqrt(1+(x-L/2.0)**4)
+        u_e = cos(pi*x/L)*cos(t[n])
+
+        self.plt.plot(x, u, 'r-', x , u_e, 'b-',
                       xlabel='x', ylabel='u',
                       axis=[x[0], x[-1], umin, umax],
-                      title=title)
+                      title=title, legend=['u_{numeric}','u_{exact}'])
+        #print (abs(u-u_e)).max(),','
         if t[n] == 0:
             time.sleep(2)  # let initial condition stay 2 s
         # No sleep - this is used for large meshes
-        self.plt.savefig('frame_%04d.png' % n)  # for movie making
+        #self.plt.savefig('frame_%04d.png' % n)  # for movie making
 
 
 def pulse(C=1, Nx=200, animate=True, version='vectorized', T=2,
