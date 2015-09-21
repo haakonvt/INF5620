@@ -345,9 +345,9 @@ class PlotAndStoreSolution:
         dt = t[1]-t[0]
         e  = u_e - u
         E = np.sqrt(dt*sum(e**2))
-        print E
         self.E_list.append(E)
-        if n == len(t)-1:
+        #print n,len(t)
+        if n + self.skip_frame > len(t)-1:
             self.plt.figure()
             self.plt.plot(self.E_list)
             print "Timestep dt:",dt
