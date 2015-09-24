@@ -24,6 +24,7 @@ def find_f(L_value):
     dxqdu = diff(q(x)*du,x)
 
     fsym  = simplify(utt-dxqdu).subs(L,L_value)
+    print "\nSympy found source term f(x,t) =\n",fsym,"\n"
     return lambdify((x, t), fsym, modules='numpy') # Return a as a non-symbolic function
 
 def convergence_rate(u, x, t, n):
@@ -34,7 +35,7 @@ def convergence_rate(u, x, t, n):
     E = np.sqrt(dt*sum(e**2))
     E_list_t.append(E)
 
-def animate(umin=-1,umax=1,skip_frame=1):
+def animate(umin=-1,umax=1,skip_frame=5):
     action = PlotAndStoreSolution(umin=umin, umax=umax, screen_movie=True, skip_frame=skip_frame)
     return action
 
@@ -52,14 +53,25 @@ def c(x):
         sys.exit()
 
 #--------------------
-global task; task = 'a' # Specify the task to be used (either a or b)
+global task,task_c;
+if len(sys.argv) == 1 or str(sys.argv[1]) not in ['a', 'b', 'c']:
+    print "\nPlease also input what task to be done, ex: \n 'python Neumann_discr.py a'"
+    sys.exit(1)
+task = str(sys.argv[1])
+if task == 'c':
+    task = 'a'         # Choose which 'settings' to use with task c (a or b)
+    task_c = True
+else:
+    task_c = False
 #--------------------
 # Start the simulation with a single call
 L           = 1.0 # Spatial domain
 C           = 1.0 # Courant number
 f           = find_f(L) # Using sympy and choose task a or b
-Neumann_ver = False # Use standard Neumann bcs discretization (57) or False = (54)
-Nx_values   = [100,200,500]
+Neumann_ver = True # Use standard Neumann bcs discretization (57) or False = (54)
+if task_c == True:
+    Neumann_ver = None # Third option with one-sided difference approach to bcs
+Nx_values   = range(50,1050,50) ####### ONLY CHANGE THIS #############
 E_values    = [] # Will contain largest error for a specific run
 dt_values   = []
 
@@ -83,6 +95,9 @@ m = len(Nx_values)
 r = [log(E_values[i-1]/E_values[i])/log(dt_values[i-1]/dt_values[i]) for i in range(1, m, 1)]
 r = [round(r_, 4) for r_ in r] # Round to three decimals
 
+if task_c == True:
+    Neumann_ver = 'Third option' # Third option with one-sided difference approach to bcs
+
 # Print out convergence rates
 print "-----------------------------------------------------------------"
 print "Nx(i) | Nx(i+1) |  dt(i)    |  dt(i+1)  |   r(i) | Std. Neu. bcs?"
@@ -94,7 +109,7 @@ figure(); plot(Nx_values[1:],r); show()
 
 screen_animation = raw_input('\nAnimate a specific Nx-value, y/n? ')
 if screen_animation == 'y':
-    user_action = animate(umin=-1,umax=1,skip_frame=1)
+    user_action = animate(umin=-1,umax=1,skip_frame=5)
     Nx = float(raw_input('Input a single value for Nx:'))
     dx = float(L)/Nx
     dt =  C*dx/c(0)

@@ -28,7 +28,7 @@ import time, glob, shutil, os
 import numpy as np
 
 def solver(I, V, f, c, U_0, U_L, L, dt, C, T,
-           user_action=None, version='scalar',
+           user_action=None, version='vectorized',
            stability_safety_factor=1.0,use_std_neuman_bcs=True):
     """Solve u_tt=(c^2*u_x)_x + f on (0,L)x(0,T]."""
     Nt = int(round(T/dt))
@@ -133,7 +133,7 @@ def solver(I, V, f, c, U_0, U_L, L, dt, C, T,
             0.5*dt2*f(x[i], t[0])
         else:
             u[i] = U_L(dt)
-    else: # Use other discretization for Neumann bcs.:
+    else:# use_std_neuman_bcs == False: # Use other discretization for Neumann bcs.:
         i = Ix[0]
         if U_0 is None:
             # Set boundary values (x=0: i-1 -> i+1 since u[i-1]=u[i+1]
@@ -153,6 +153,26 @@ def solver(I, V, f, c, U_0, U_L, L, dt, C, T,
                    C2*2*q[i]*(u_1[im1] - u_1[i])
         else:
             u[i] = U_L(dt)
+    """else: # use_std_neuman_bcs == None
+        i = Ix[0]
+        if U_0 is None:
+            # Set boundary values (x=0: i-1 -> i+1 since u[i-1]=u[i+1]
+            # when du/dn = 0, on x=L: i+1 -> i-1 since u[i+1]=u[i-1])
+            ip1 = i+1
+            im1 = ip1  # i-1 -> i+1
+            u[i] = u_1[i] + dt*V(x[i]) + 0.5*dt2*f(x[i], t[0]) + \
+                   C2*q[i]*(u_1[ip1] - u_1[i])
+        else:
+            u[i] = U_0(dt)
+
+        i = Ix[-1]
+        if U_L is None:
+            im1 = i-1
+            ip1 = im1  # i+1 -> i-1
+            u[i] = u_1[i] + dt*V(x[i]) + 0.5*dt2*f(x[i], t[0]) + \
+                   C2*2*q[i]*(u_1[im1] - u_1[i])
+        else:
+            u[i] = U_L(dt)"""
 
     if user_action is not None:
         user_action(u, x, t, 1)
@@ -204,7 +224,7 @@ def solver(I, V, f, c, U_0, U_L, L, dt, C, T,
                 dt2*f(x[i], t[n])
             else:
                 u[i] = U_L(t[n+1])
-        else:
+        elif use_std_neuman_bcs == False:
             """ Use the approximation (54) in lecture notes:
                 http://hplgit.github.io/num-methods-for-PDEs/doc/pub/wave/html/._wave003.html#mjx-eqn-54"""
             i = Ix[0]
@@ -227,6 +247,28 @@ def solver(I, V, f, c, U_0, U_L, L, dt, C, T,
                        C2*2*q[i]*(u_1[im1] - u_1[i])
             else:
                 u[i] = U_L(t[n+1])
+        else: # use_std_neuman_bcs == None
+            i = Ix[0]
+            if U_0 is None:
+                # Set boundary values
+                # x=0: i-1 -> i+1 since u[i-1]=u[i+1] when du/dn=0
+                # x=L: i+1 -> i-1 since u[i+1]=u[i-1] when du/dn=0
+                ip1 = i+1
+                im1 = ip1
+                u[i] = - u_2[i] + 2*u_1[i] + dt2*f(x[i], t[n]) + \
+                       C2*(0.5*(q[i] + q[ip1])*(u_1[ip1] - u_1[i]))
+            else:
+                u[i] = U_0(t[n+1])
+
+            i = Ix[-1]
+            if U_L is None:
+                im1 = i-1
+                ip1 = im1
+                u[i] = - u_2[i] + 2*u_1[i] + dt2*f(x[i], t[n]) - \
+                       C2*(0.5*(q[i] + q[im1])*(u_1[i] - u_1[im1]))
+            else:
+                u[i] = U_L(t[n+1])
+
 
         if user_action is not None:
             if user_action(u, x, t, n+1):
