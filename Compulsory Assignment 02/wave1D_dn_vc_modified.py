@@ -133,7 +133,7 @@ def solver(I, V, f, c, U_0, U_L, L, dt, C, T,
             0.5*dt2*f(x[i], t[0])
         else:
             u[i] = U_L(dt)
-    else:# use_std_neuman_bcs == False: # Use other discretization for Neumann bcs.:
+    elif use_std_neuman_bcs == False: # Use other discretization for Neumann bcs.:
         i = Ix[0]
         if U_0 is None:
             # Set boundary values (x=0: i-1 -> i+1 since u[i-1]=u[i+1]
@@ -153,15 +153,16 @@ def solver(I, V, f, c, U_0, U_L, L, dt, C, T,
                    C2*2*q[i]*(u_1[im1] - u_1[i])
         else:
             u[i] = U_L(dt)
-    """else: # use_std_neuman_bcs == None
+    else: # use_std_neuman_bcs == None --> Third option, one-sided difference approach
         i = Ix[0]
         if U_0 is None:
             # Set boundary values (x=0: i-1 -> i+1 since u[i-1]=u[i+1]
             # when du/dn = 0, on x=L: i+1 -> i-1 since u[i+1]=u[i-1])
             ip1 = i+1
             im1 = ip1  # i-1 -> i+1
-            u[i] = u_1[i] + dt*V(x[i]) + 0.5*dt2*f(x[i], t[0]) + \
-                   C2*q[i]*(u_1[ip1] - u_1[i])
+            u[i] = u_1[i] + dt*V(x[i]) + \
+                   0.5*C2*(0.5*(q[i] + q[ip1])*(u_1[ip1] - u_1[i])) + \
+            0.5*dt2*f(x[i], t[0])
         else:
             u[i] = U_0(dt)
 
@@ -169,10 +170,11 @@ def solver(I, V, f, c, U_0, U_L, L, dt, C, T,
         if U_L is None:
             im1 = i-1
             ip1 = im1  # i+1 -> i-1
-            u[i] = u_1[i] + dt*V(x[i]) + 0.5*dt2*f(x[i], t[0]) + \
-                   C2*2*q[i]*(u_1[im1] - u_1[i])
+            u[i] = u_1[i] + dt*V(x[i]) - \
+                   0.5*C2*(0.5*(q[i] + q[im1])*(u_1[i] - u_1[im1])) + \
+            0.5*dt2*f(x[i], t[0])
         else:
-            u[i] = U_L(dt)"""
+            u[i] = U_L(dt)
 
     if user_action is not None:
         user_action(u, x, t, 1)

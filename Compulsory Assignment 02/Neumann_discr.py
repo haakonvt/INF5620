@@ -59,7 +59,7 @@ if len(sys.argv) == 1 or str(sys.argv[1]) not in ['a', 'b', 'c']:
     sys.exit(1)
 task = str(sys.argv[1])
 if task == 'c':
-    task = 'a'         # Choose which 'settings' to use with task c (a or b)
+    task = 'b'         # Choose which 'q-setting' to use with task c (a or b)
     task_c = True
 else:
     task_c = False
@@ -110,7 +110,7 @@ figure(); plot(Nx_values[1:],r); show()
 screen_animation = raw_input('\nAnimate a specific Nx-value, y/n? ')
 if screen_animation == 'y':
     user_action = animate(umin=-1,umax=1,skip_frame=5)
-    Nx = float(raw_input('Input a single value for Nx:'))
+    Nx = float(raw_input('Input a single value for Nx: (should be in range 100-1000) '))
     dx = float(L)/Nx
     dt =  C*dx/c(0)
     solver(I=I, V=None, f=f, c=c, U_0=None, U_L=None,
