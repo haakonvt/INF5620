@@ -28,9 +28,8 @@ def find_f(L_value):
     return lambdify((x, t), fsym, modules='numpy') # Return a as a non-symbolic function
 
 def convergence_rate(u, x, t, n):
-    L = 1.0
+    L   = 1.0
     u_e = cos(pi*x/L)*cos(t[n])
-    #diff = max(u - u_e)
     e = u_e - u
     E = np.sqrt(dt*sum(e**2))
     E_list_t.append(E)
