@@ -53,29 +53,37 @@ def c(x):
         sys.exit()
 
 #--------------------
-global task,task_c;
-if len(sys.argv) == 1 or str(sys.argv[1]) not in ['a', 'b', 'c']:
-    print "\nPlease also input what task to be done, ex: \n 'python Neumann_discr.py a'"
+global task,task_c,task_d;
+if len(sys.argv) == 1 or str(sys.argv[1]) not in ['a', 'b', 'c', 'd']:
+    print "\nPlease also input what task to be done, i.e. task (a):: \n 'python Neumann_discr.py a'"
     sys.exit(1)
 task = str(sys.argv[1])
 if task == 'c':
-    task = 'b'         # Choose which 'q-setting' to use with task c (a or b)
+    task = 'a'         # Choose which 'q-setting' to use with task c (a or b)
     task_c = True
 else:
     task_c = False
+
+if task == 'd':
+    task_d = True
+    task = 'a'         # Choose which 'q-setting' to use with task d (a or b)
+else:
+    task_d = False
 #--------------------
 # Start the simulation with a single call
 L           = 1.0 # Spatial domain
 C           = 1.0 # Courant number
-f           = find_f(L) # Using sympy and choose task a or b
+f           = find_f(L) # Using sympy to find source term
 Neumann_ver = True # Use standard Neumann bcs discretization (57) or False = (54)
 if task_c == True:
     Neumann_ver = None # Third option with one-sided difference approach to bcs
-Nx_values   = range(50,1050,50) ####### ONLY CHANGE THIS #############
+if task_d == True:
+    Neumann_ver = 'ghost_cells'
+Nx_values   = range(50,50+int(sys.argv[2]),50) ####### ONLY CHANGE THIS #############
 E_values    = [] # Will contain largest error for a specific run
 dt_values   = []
 
-
+# Set what action to call for every timestep in solver()
 user_action = convergence_rate
 print "\nRunning convergence tests"
 for Nxi in Nx_values: # Run all experiments
@@ -95,8 +103,12 @@ m = len(Nx_values)
 r = [log(E_values[i-1]/E_values[i])/log(dt_values[i-1]/dt_values[i]) for i in range(1, m, 1)]
 r = [round(r_, 4) for r_ in r] # Round to three decimals
 
-if task_c == True:
-    Neumann_ver = 'Third option' # Third option with one-sided difference approach to bcs
+if task_c == True: # For pretty printing :D
+    Neumann_ver_print = 'Third option' # Third option: one-sided difference approach to bcs
+elif task_d == True:
+    Neumann_ver_print = 'Ghost cells' # Fourth option: ghost cells approach to bcs
+else:
+    Neumann_ver_print = Neumann_ver
 
 # Print out convergence rates
 print "-----------------------------------------------------------------"
@@ -104,11 +116,11 @@ print "Nx(i) | Nx(i+1) |  dt(i)    |  dt(i+1)  |   r(i) | Std. Neu. bcs?"
 print "-----------------------------------------------------------------"
 for i in range(m-1):
     print "%-3i     %-4i      %-9.3E   %-9.3E   %-5.4f   %s" \
-        %(Nx_values[i], Nx_values[i+1], dt_values[i], dt_values[i+1], r[i], Neumann_ver)
+        %(Nx_values[i], Nx_values[i+1], dt_values[i], dt_values[i+1], r[i], Neumann_ver_print)
 figure(); plot(Nx_values[1:],r); show()
 
-screen_animation = raw_input('\nAnimate a specific Nx-value, y/n? ')
-if screen_animation == 'y':
+screen_animation = raw_input('\nAnimate a specific Nx-value, y/n (or enter)? ')
+if screen_animation in ['y', '']:
     user_action = animate(umin=-1,umax=1,skip_frame=5)
     Nx = float(raw_input('Input a single value for Nx: (should be in range 100-1000) '))
     dx = float(L)/Nx

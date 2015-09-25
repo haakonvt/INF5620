@@ -31,6 +31,7 @@ def solver(I, V, f, c, U_0, U_L, L, dt, C, T,
            user_action=None, version='vectorized',
            stability_safety_factor=1.0,use_std_neuman_bcs=True):
     """Solve u_tt=(c^2*u_x)_x + f on (0,L)x(0,T]."""
+
     Nt = int(round(T/dt))
     t = np.linspace(0, Nt*dt, Nt+1)      # Mesh points in time
 
@@ -41,17 +42,28 @@ def solver(I, V, f, c, U_0, U_L, L, dt, C, T,
         c_max = max([c(x_) for x_ in np.linspace(0, L, 101)])
     dx = dt*c_max/(stability_safety_factor*C)
     Nx = int(round(L/dx))
-    x = np.linspace(0, L, Nx+1)          # Mesh points in space
+    x = np.linspace(0, L, Nx+1)   # Mesh points in space
 
-    # Treat c(x) as array
-    if isinstance(c, (float,int)):
-        c = np.zeros(x.shape) + c
-    elif callable(c):
-        # Call c(x) and fill array c
-        c_ = np.zeros(x.shape)
-        for i in range(Nx+1):
-            c_[i] = c(x[i])
-        c = c_
+    if use_std_neuman_bcs == 'ghost_cells':
+        # Treat c(x) as array
+        if isinstance(c, (float,int)):
+            c = np.zeros(x.shape) + c
+        elif callable(c):
+            # Call c(x) and fill array c
+            c_ = np.zeros(x.shape[0]+2)
+            for i in range(Nx+1):
+                c_[i+1] = c(x[i])
+            c = c_
+            c[0] = c[1]; c[-1] = c[-2] # Fix ghost cells: Assuming dq/dc = 0 (bcs)
+    else:
+        if isinstance(c, (float,int)):
+            c = np.zeros(x.shape) + c
+        elif callable(c):
+            # Call c(x) and fill array c
+            c_ = np.zeros(x.shape)
+            for i in range(Nx+1):
+                c_[i] = c(x[i])
+            c = c_
 
     q = c**2
     C2 = (dt/dx)**2; dt2 = dt*dt    # Help variables in the scheme
@@ -73,218 +85,283 @@ def solver(I, V, f, c, U_0, U_L, L, dt, C, T,
         if isinstance(U_L, (float,int)) and U_L == 0:
             U_L = lambda t: 0
 
-    # Make hash of all input data
-    """import hashlib, inspect
-    data = inspect.getsource(I) + '_' + inspect.getsource(V) + \
-           '_' + inspect.getsource(f) + '_' + str(c) + '_' + \
-           ('None' if U_0 is None else inspect.getsource(U_0)) + \
-           ('None' if U_L is None else inspect.getsource(U_L)) + \
-           '_' + str(L) + str(dt) + '_' + str(C) + '_' + str(T) + \
-           '_' + str(stability_safety_factor)
-    hashed_input = hashlib.sha1(data).hexdigest()
-    if os.path.isfile('.' + hashed_input + '_archive.npz'):
-        # Simulation is already run
-        return -1, hashed_input"""
-
-    u   = np.zeros(Nx+1)   # Solution array at new time level
-    u_1 = np.zeros(Nx+1)   # Solution at 1 time level back
-    u_2 = np.zeros(Nx+1)   # Solution at 2 time levels back
-
     import time;  t0 = time.clock()  # CPU time measurement
 
-    Ix = range(0, Nx+1)
-    It = range(0, Nt+1)
+    if use_std_neuman_bcs == 'ghost_cells':
+        """
+        This is solver function if we USE ghost cells i.e. task d
+        for initalization and formula for step 1
+        """
+        u   = np.zeros(Nx+3)   # Solution array at new time level
+        u_1 = np.zeros(Nx+3)   # Solution at 1 time level back
+        u_2 = np.zeros(Nx+3)   # Solution at 2 time levels back
 
-    # Load initial condition into u_1
-    for i in range(0,Nx+1):
-        u_1[i] = I(x[i])
+        Ix = range(1, u.shape[0]-1) # Will be using index set notation
+        It = range(0, t.shape[0])
 
-    if user_action is not None:
-        user_action(u_1, x, t, 0)
+        for i in Ix: # Load initial condition into u_1
+            u_1[i] = I(x[i-Ix[0]])  # Note the index transformation in x
+        # Ghost values set according to du/dx=0
+        i = Ix[0]; u_1[i-1] = u_1[i+1]; i = Ix[-1]; u_1[i+1] = u_1[i-1]
 
-    # Special formula for the first step
-    for i in Ix[1:-1]:
-        u[i] = u_1[i] + dt*V(x[i]) + \
-        0.5*C2*(0.5*(q[i] + q[i+1])*(u_1[i+1] - u_1[i]) - \
-                0.5*(q[i] + q[i-1])*(u_1[i] - u_1[i-1])) + \
-        0.5*dt2*f(x[i], t[0])
+        if user_action is not None:
+            # Make sure to send the part of u that corresponds to x
+            user_action(u_1[Ix[0]:Ix[-1]+1], x, t, 0)
 
-    if use_std_neuman_bcs == True:
-        i = Ix[0]
-        if U_0 is None:
-            # Set boundary values (x=0: i-1 -> i+1 since u[i-1]=u[i+1]
-            # when du/dn = 0, on x=L: i+1 -> i-1 since u[i+1]=u[i-1])
-            ip1 = i+1
-            im1 = ip1  # i-1 -> i+1
+        #Special formula for the first step
+        for i in Ix:
+            u[i] = u_1[i] + dt*V(x[i-Ix[0]]) + \
+                  0.5*C2*(0.5*(q[i] + q[i+1])*(u_1[i+1] - u_1[i]) - \
+                          0.5*(q[i] + q[i-1])*(u_1[i] - u_1[i-1])) + \
+                  0.5*dt2*f(x[i-Ix[0]], t[0])
+
+        # Ghost values set according to du/dx=0
+        i = Ix[0]; u[i-1] = u[i+1]; i = Ix[-1]; u[i+1] = u[i-1]
+
+        if user_action is not None:
+            user_action(u[Ix[0]:Ix[-1]+1], x, t, 1)
+
+    else:
+        """
+        This is solver function if we do NOT USE ghost cells i.e. task a,b,c
+        for initalization and formula for step 1
+        """
+        u   = np.zeros(Nx+1)
+        u_1 = np.zeros(Nx+1)
+        u_2 = np.zeros(Nx+1)
+
+        Ix = range(0, Nx+1)
+        It = range(0, Nt+1)
+
+        # Load initial condition into u_1
+        for i in range(0,Nx+1):
+            u_1[i] = I(x[i])
+
+        if user_action is not None:
+            user_action(u_1, x, t, 0)
+
+        # Special formula for the first step
+        for i in Ix[1:-1]:
             u[i] = u_1[i] + dt*V(x[i]) + \
-                   0.5*C2*(0.5*(q[i] + q[ip1])*(u_1[ip1] - u_1[i])  - \
-                           0.5*(q[i] + q[im1])*(u_1[i] - u_1[im1])) + \
+            0.5*C2*(0.5*(q[i] + q[i+1])*(u_1[i+1] - u_1[i]) - \
+                    0.5*(q[i] + q[i-1])*(u_1[i] - u_1[i-1])) + \
             0.5*dt2*f(x[i], t[0])
-        else:
-            u[i] = U_0(dt)
 
-        i = Ix[-1]
-        if U_L is None:
-            im1 = i-1
-            ip1 = im1  # i+1 -> i-1
-            u[i] = u_1[i] + dt*V(x[i]) + \
-                   0.5*C2*(0.5*(q[i] + q[ip1])*(u_1[ip1] - u_1[i])  - \
-                           0.5*(q[i] + q[im1])*(u_1[i] - u_1[im1])) + \
-            0.5*dt2*f(x[i], t[0])
-        else:
-            u[i] = U_L(dt)
-    elif use_std_neuman_bcs == False: # Use other discretization for Neumann bcs.:
-        i = Ix[0]
-        if U_0 is None:
-            # Set boundary values (x=0: i-1 -> i+1 since u[i-1]=u[i+1]
-            # when du/dn = 0, on x=L: i+1 -> i-1 since u[i+1]=u[i-1])
-            ip1 = i+1
-            im1 = ip1  # i-1 -> i+1
-            u[i] = u_1[i] + dt*V(x[i]) + 0.5*dt2*f(x[i], t[0]) + \
-                   C2*q[i]*(u_1[ip1] - u_1[i])
-        else:
-            u[i] = U_0(dt)
-
-        i = Ix[-1]
-        if U_L is None:
-            im1 = i-1
-            ip1 = im1  # i+1 -> i-1
-            u[i] = u_1[i] + dt*V(x[i]) + 0.5*dt2*f(x[i], t[0]) + \
-                   C2*2*q[i]*(u_1[im1] - u_1[i])
-        else:
-            u[i] = U_L(dt)
-    else: # use_std_neuman_bcs == None --> Third option, one-sided difference approach
-        i = Ix[0]
-        if U_0 is None:
-            # Set boundary values (x=0: i-1 -> i+1 since u[i-1]=u[i+1]
-            # when du/dn = 0, on x=L: i+1 -> i-1 since u[i+1]=u[i-1])
-            ip1 = i+1
-            im1 = ip1  # i-1 -> i+1
-            u[i] = u_1[i] + dt*V(x[i]) + \
-                   0.5*C2*(0.5*(q[i] + q[ip1])*(u_1[ip1] - u_1[i])) + \
-            0.5*dt2*f(x[i], t[0])
-        else:
-            u[i] = U_0(dt)
-
-        i = Ix[-1]
-        if U_L is None:
-            im1 = i-1
-            ip1 = im1  # i+1 -> i-1
-            u[i] = u_1[i] + dt*V(x[i]) - \
-                   0.5*C2*(0.5*(q[i] + q[im1])*(u_1[i] - u_1[im1])) + \
-            0.5*dt2*f(x[i], t[0])
-        else:
-            u[i] = U_L(dt)
-
-    if user_action is not None:
-        user_action(u, x, t, 1)
-
-    # Update data structures for next step
-    #u_2[:] = u_1;  u_1[:] = u  # safe, but slower
-    u_2, u_1, u = u_1, u, u_2
-
-    for n in It[1:-1]:
-        # Update all inner points
-        if version == 'scalar':
-            for i in Ix[1:-1]:
-                u[i] = - u_2[i] + 2*u_1[i] + \
-                    C2*(0.5*(q[i] + q[i+1])*(u_1[i+1] - u_1[i])  - \
-                        0.5*(q[i] + q[i-1])*(u_1[i] - u_1[i-1])) + \
-                dt2*f(x[i], t[n])
-
-        elif version == 'vectorized':
-            u[1:-1] = - u_2[1:-1] + 2*u_1[1:-1] + \
-            C2*(0.5*(q[1:-1] + q[2:])*(u_1[2:] - u_1[1:-1]) - \
-                0.5*(q[1:-1] + q[:-2])*(u_1[1:-1] - u_1[:-2])) + \
-            dt2*f(x[1:-1], t[n])
-        else:
-            raise ValueError('version=%s' % version)
-
-        # Insert boundary conditions
         if use_std_neuman_bcs == True:
             i = Ix[0]
             if U_0 is None:
-                # Set boundary values
-                # x=0: i-1 -> i+1 since u[i-1]=u[i+1] when du/dn=0
-                # x=L: i+1 -> i-1 since u[i+1]=u[i-1] when du/dn=0
+                # Set boundary values (x=0: i-1 -> i+1 since u[i-1]=u[i+1]
+                # when du/dn = 0, on x=L: i+1 -> i-1 since u[i+1]=u[i-1])
                 ip1 = i+1
-                im1 = ip1
-                u[i] = - u_2[i] + 2*u_1[i] + \
-                       C2*(0.5*(q[i] + q[ip1])*(u_1[ip1] - u_1[i])  - \
-                           0.5*(q[i] + q[im1])*(u_1[i] - u_1[im1])) + \
-                dt2*f(x[i], t[n])
+                im1 = ip1  # i-1 -> i+1
+                u[i] = u_1[i] + dt*V(x[i]) + \
+                       0.5*C2*(0.5*(q[i] + q[ip1])*(u_1[ip1] - u_1[i])  - \
+                               0.5*(q[i] + q[im1])*(u_1[i] - u_1[im1])) + \
+                0.5*dt2*f(x[i], t[0])
             else:
-                u[i] = U_0(t[n+1])
+                u[i] = U_0(dt)
 
             i = Ix[-1]
             if U_L is None:
                 im1 = i-1
-                ip1 = im1
-                u[i] = - u_2[i] + 2*u_1[i] + \
-                       C2*(0.5*(q[i] + q[ip1])*(u_1[ip1] - u_1[i])  - \
-                           0.5*(q[i] + q[im1])*(u_1[i] - u_1[im1])) + \
-                dt2*f(x[i], t[n])
+                ip1 = im1  # i+1 -> i-1
+                u[i] = u_1[i] + dt*V(x[i]) + \
+                       0.5*C2*(0.5*(q[i] + q[ip1])*(u_1[ip1] - u_1[i])  - \
+                               0.5*(q[i] + q[im1])*(u_1[i] - u_1[im1])) + \
+                0.5*dt2*f(x[i], t[0])
             else:
-                u[i] = U_L(t[n+1])
-        elif use_std_neuman_bcs == False:
-            """ Use the approximation (54) in lecture notes:
-                http://hplgit.github.io/num-methods-for-PDEs/doc/pub/wave/html/._wave003.html#mjx-eqn-54"""
+                u[i] = U_L(dt)
+        elif use_std_neuman_bcs == False: # Use other discretization for Neumann bcs.:
             i = Ix[0]
             if U_0 is None:
-                # Set boundary values
-                # x=0: i-1 -> i+1 since u[i-1]=u[i+1] when du/dn=0
-                # x=L: i+1 -> i-1 since u[i+1]=u[i-1] when du/dn=0
+                # Set boundary values (x=0: i-1 -> i+1 since u[i-1]=u[i+1]
+                # when du/dn = 0, on x=L: i+1 -> i-1 since u[i+1]=u[i-1])
                 ip1 = i+1
-                im1 = ip1
-                u[i] = - u_2[i] + 2*u_1[i] + dt2*f(x[i], t[n]) + \
-                       C2*2*q[i]*(u_1[ip1]-u_1[i])
+                im1 = ip1  # i-1 -> i+1
+                u[i] = u_1[i] + dt*V(x[i]) + 0.5*dt2*f(x[i], t[0]) + \
+                       C2*q[i]*(u_1[ip1] - u_1[i])
             else:
-                u[i] = U_0(t[n+1])
+                u[i] = U_0(dt)
 
             i = Ix[-1]
             if U_L is None:
                 im1 = i-1
-                ip1 = im1
-                u[i] = - u_2[i] + 2*u_1[i] + dt2*f(x[i], t[n]) + \
+                ip1 = im1  # i+1 -> i-1
+                u[i] = u_1[i] + dt*V(x[i]) + 0.5*dt2*f(x[i], t[0]) + \
                        C2*2*q[i]*(u_1[im1] - u_1[i])
             else:
-                u[i] = U_L(t[n+1])
-        else: # use_std_neuman_bcs == None
+                u[i] = U_L(dt)
+        else:
+            """use_std_neuman_bcs == None --> Third option, one-sided difference approach"""
             i = Ix[0]
             if U_0 is None:
-                # Set boundary values
-                # x=0: i-1 -> i+1 since u[i-1]=u[i+1] when du/dn=0
-                # x=L: i+1 -> i-1 since u[i+1]=u[i-1] when du/dn=0
                 ip1 = i+1
-                im1 = ip1
-                u[i] = - u_2[i] + 2*u_1[i] + dt2*f(x[i], t[n]) + \
-                       C2*(0.5*(q[i] + q[ip1])*(u_1[ip1] - u_1[i]))
+                im1 = ip1  # i-1 -> i+1
+                u[i] = u_1[i] + dt*V(x[i]) + \
+                       0.5*C2*(0.5*(q[i] + q[ip1])*(u_1[ip1] - u_1[i])) + \
+                0.5*dt2*f(x[i], t[0])
             else:
-                u[i] = U_0(t[n+1])
+                u[i] = U_0(dt)
 
             i = Ix[-1]
             if U_L is None:
                 im1 = i-1
-                ip1 = im1
-                u[i] = - u_2[i] + 2*u_1[i] + dt2*f(x[i], t[n]) - \
-                       C2*(0.5*(q[i] + q[im1])*(u_1[i] - u_1[im1]))
+                ip1 = im1  # i+1 -> i-1
+                u[i] = u_1[i] + dt*V(x[i]) - \
+                       0.5*C2*(0.5*(q[i] + q[im1])*(u_1[i] - u_1[im1])) + \
+                0.5*dt2*f(x[i], t[0])
             else:
-                u[i] = U_L(t[n+1])
-
+                u[i] = U_L(dt)
 
         if user_action is not None:
-            if user_action(u, x, t, n+1):
-                break
+            user_action(u, x, t, 1)
 
-        # Update data structures for next step
-        #u_2[:] = u_1;  u_1[:] = u  # safe, but slower
-        u_2, u_1, u = u_1, u, u_2
+    """
+    Update data structures for next step.
+    Works with any version of solver
+    """
+    #u_2[:] = u_1;  u_1[:] = u  # safe, but slower
+    u_2, u_1, u = u_1, u, u_2
+
+    if use_std_neuman_bcs == 'ghost_cells':
+        """
+        This is solver function if we USE ghost cells i.e. task d
+        for updating all inner points in time loop
+        """
+        for n in range(1, Nt):
+            # Update all inner points
+            if version == 'scalar':
+                for i in Ix:
+                    u[i] = - u_2[i] + 2*u_1[i] + \
+                           C2*(0.5*(q[i] + q[i+1])*(u_1[i+1] - u_1[i])  - \
+                               0.5*(q[i] + q[i-1])*(u_1[i] - u_1[i-1])) + \
+                           dt2*f(x[i-Ix[0]], t[n])
+            elif version == 'vectorized':
+                u[1:-1] = - u_2[1:-1] + 2*u_1[1:-1] + \
+                C2*(0.5*(q[1:-1] + q[2:])*(u_1[2:] - u_1[1:-1]) - \
+                    0.5*(q[1:-1] + q[:-2])*(u_1[1:-1] - u_1[:-2])) + \
+                dt2*f(x, t[n])
+            else:
+                raise ValueError('version=%s' % version)
+
+            # Ghost values set according to du/dx=0
+            i = Ix[0]; u[i-1] = u[i+1]; i = Ix[-1]; u[i+1] = u[i-1]
+
+            if user_action is not None:
+                # Make sure to send the part of u that corresponds to x
+                if user_action(u[Ix[0]:Ix[-1]+1], x, t, n+1):
+                    break
+
+            # Update data structures for next step
+            #u_2[:] = u_1;  u_1[:] = u  # safe, but slower
+            u_2, u_1, u = u_1, u, u_2
+    else:
+        """
+        This is solver function if we do NOT USE ghost cells i.e. task a,b,c
+        for updating all inner points in time loop
+        """
+        for n in It[1:-1]:
+            # Update all inner points
+            if version == 'scalar':
+                for i in Ix[1:-1]:
+                    u[i] = - u_2[i] + 2*u_1[i] + \
+                        C2*(0.5*(q[i] + q[i+1])*(u_1[i+1] - u_1[i])  - \
+                            0.5*(q[i] + q[i-1])*(u_1[i] - u_1[i-1])) + \
+                    dt2*f(x[i], t[n])
+
+            elif version == 'vectorized':
+                u[1:-1] = - u_2[1:-1] + 2*u_1[1:-1] + \
+                C2*(0.5*(q[1:-1] + q[2:])*(u_1[2:] - u_1[1:-1]) - \
+                    0.5*(q[1:-1] + q[:-2])*(u_1[1:-1] - u_1[:-2])) + \
+                dt2*f(x[1:-1], t[n])
+            else:
+                raise ValueError('version=%s' % version)
+
+            # Insert boundary conditions
+            if use_std_neuman_bcs == True:
+                i = Ix[0]
+                if U_0 is None:
+                    # Set boundary values
+                    # x=0: i-1 -> i+1 since u[i-1]=u[i+1] when du/dn=0
+                    # x=L: i+1 -> i-1 since u[i+1]=u[i-1] when du/dn=0
+                    ip1 = i+1
+                    im1 = ip1
+                    u[i] = - u_2[i] + 2*u_1[i] + \
+                           C2*(0.5*(q[i] + q[ip1])*(u_1[ip1] - u_1[i])  - \
+                               0.5*(q[i] + q[im1])*(u_1[i] - u_1[im1])) + \
+                    dt2*f(x[i], t[n])
+                else:
+                    u[i] = U_0(t[n+1])
+
+                i = Ix[-1]
+                if U_L is None:
+                    im1 = i-1
+                    ip1 = im1
+                    u[i] = - u_2[i] + 2*u_1[i] + \
+                           C2*(0.5*(q[i] + q[ip1])*(u_1[ip1] - u_1[i])  - \
+                               0.5*(q[i] + q[im1])*(u_1[i] - u_1[im1])) + \
+                    dt2*f(x[i], t[n])
+                else:
+                    u[i] = U_L(t[n+1])
+            elif use_std_neuman_bcs == False:
+                """ Use the approximation (54) in lecture notes:
+                    http://hplgit.github.io/num-methods-for-PDEs/doc/pub/wave/html/._wave003.html#mjx-eqn-54"""
+                i = Ix[0]
+                if U_0 is None:
+                    # Set boundary values
+                    # x=0: i-1 -> i+1 since u[i-1]=u[i+1] when du/dn=0
+                    # x=L: i+1 -> i-1 since u[i+1]=u[i-1] when du/dn=0
+                    ip1 = i+1
+                    im1 = ip1
+                    u[i] = - u_2[i] + 2*u_1[i] + dt2*f(x[i], t[n]) + \
+                           C2*2*q[i]*(u_1[ip1]-u_1[i])
+                else:
+                    u[i] = U_0(t[n+1])
+
+                i = Ix[-1]
+                if U_L is None:
+                    im1 = i-1
+                    ip1 = im1
+                    u[i] = - u_2[i] + 2*u_1[i] + dt2*f(x[i], t[n]) + \
+                           C2*2*q[i]*(u_1[im1] - u_1[i])
+                else:
+                    u[i] = U_L(t[n+1])
+            else:
+                """use_std_neuman_bcs == None --> Third option, one-sided difference approach"""
+                i = Ix[0]
+                if U_0 is None:
+                    # Set boundary values
+                    ip1 = i+1
+                    im1 = ip1
+                    u[i] = - u_2[i] + 2*u_1[i] + dt2*f(x[i], t[n]) + \
+                           C2*(0.5*(q[i] + q[ip1])*(u_1[ip1] - u_1[i]))
+                else:
+                    u[i] = U_0(t[n+1])
+
+                i = Ix[-1]
+                if U_L is None:
+                    im1 = i-1
+                    ip1 = im1
+                    u[i] = - u_2[i] + 2*u_1[i] + dt2*f(x[i], t[n]) - \
+                           C2*(0.5*(q[i] + q[im1])*(u_1[i] - u_1[im1]))
+                else:
+                    u[i] = U_L(t[n+1])
+
+
+            if user_action is not None:
+                if user_action(u, x, t, n+1):
+                     break
+
+            # Update data structures for next step
+            #u_2[:] = u_1;  u_1[:] = u  # safe, but slower
+            u_2, u_1, u = u_1, u, u_2
+
 
     # Important to correct the mathematically wrong u=u_2 above
     # before returning u
     u = u_1
     cpu_time = t0 - time.clock()
-    return cpu_time#, hashed_input
+    return cpu_time
 
 class PlotAndStoreSolution:
     """
