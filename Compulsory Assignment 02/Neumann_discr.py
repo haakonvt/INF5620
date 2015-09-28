@@ -28,13 +28,15 @@ def find_f(L_value):
     return lambdify((x, t), fsym, modules='numpy') # Return a as a non-symbolic function
 
 def convergence_rate(u, x, t, n):
-    L   = 1.0
+    # This is user_action needed to compute the errors leading to the conv. rates
+	L   = 1.0
     u_e = cos(pi*x/L)*cos(t[n])
     e = u_e - u
     E = np.sqrt(dt*sum(e**2))
     E_list_t.append(E)
 
 def animate(umin=-1,umax=1,skip_frame=5):
+    # This is user_action controlling the plotting/animation
     action = PlotAndStoreSolution(umin=umin, umax=umax, screen_movie=True, skip_frame=skip_frame)
     return action
 
@@ -54,7 +56,8 @@ def c(x):
 #--------------------
 global task,task_c,task_d;
 if len(sys.argv) == 1 or str(sys.argv[1]) not in ['a', 'b', 'c', 'd']:
-    print "\nPlease also input what task to be done, i.e. task (a):: \n 'python Neumann_discr.py a'"
+    print "\nPlease input what task to be done and highest Nx-value, i.e.: \n 'python Neumann_discr.py a 500'"
+	print "This will find the convergence rate with Nx = 50,100,...500"
     sys.exit(1)
 task = str(sys.argv[1])
 if task == 'c':
