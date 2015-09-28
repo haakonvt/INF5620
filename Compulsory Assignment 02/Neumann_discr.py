@@ -76,12 +76,12 @@ else:
 L           = 1.0 # Spatial domain
 C           = 1.0 # Courant number
 f           = find_f(L) # Using sympy to find source term
-Neumann_ver = True # Use standard Neumann bcs discretization (57) or False = (54)
+Neumann_ver = True # Use standard Neumann bcs discretization (57) or False = (54) ####### ONLY CHANGE THIS #############
 if task_c == True:
     Neumann_ver = None # Third option with one-sided difference approach to bcs
 if task_d == True:
     Neumann_ver = 'ghost_cells'
-Nx_values   = range(50,50+int(sys.argv[2]),50) ####### ONLY CHANGE THIS #############
+Nx_values   = range(50,50+int(sys.argv[2]),50)
 E_values    = [] # Will contain largest error for a specific run
 dt_values   = []
 

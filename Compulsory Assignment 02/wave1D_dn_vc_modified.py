@@ -124,7 +124,7 @@ def solver(I, V, f, c, U_0, U_L, L, dt, C, T,
     else:
         """
         This is solver function if we do NOT USE ghost cells i.e. task a,b,c
-        for initalization and formula for step 1
+        for initialization and formula for step 1
         """
         u   = np.zeros(Nx+1)
         u_1 = np.zeros(Nx+1)
@@ -171,7 +171,7 @@ def solver(I, V, f, c, U_0, U_L, L, dt, C, T,
                 0.5*dt2*f(x[i], t[0])
             else:
                 u[i] = U_L(dt)
-        elif use_std_neuman_bcs == False: # Use other discretization for Neumann bcs.:
+        elif use_std_neuman_bcs == False: # Use other discretionary for Neumann bcs.:
             i = Ix[0]
             if U_0 is None:
                 # Set boundary values (x=0: i-1 -> i+1 since u[i-1]=u[i+1]
