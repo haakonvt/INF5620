@@ -25,7 +25,10 @@ This function allows the calling code to plot the solution,
 compute errors, etc.
 """
 import time, sys
-from scitools.std import *
+try:
+    from scitools.std import *
+except:
+    print "Scitools not installed, exiting.."; sys.exit(1)
 
 def solver(I, V, f, c, Lx, Ly, Nx, Ny, dt, T,
            user_action=None, version='scalar'):
@@ -44,37 +47,46 @@ def solver(I, V, f, c, Lx, Ly, Nx, Ny, dt, T,
     xv = x[:,newaxis]          # for vectorized function evaluations
     yv = y[newaxis,:]
 
-    c_max = max(c) # TODO: NEED TO FIX THIS
+    # Assuming c is a function:
+    for i,x in enumerate(x):
+        for j,y in enumerate(y):
+            c_[i,j] = c(x,y)    # Loop through x and y with indices i,j at the same time
+    c_max = max(c_)             # Pick out the largest value for c(x,y)
+    q = c_**2
 
     stability_limit = (1/float(c_max))*(1/sqrt(1/dx**2 + 1/dy**2))
-    if dt <= 0:                # max time step?
+    if dt <= 0:                # shortcut for max time step is to use i.e. dt = -1
         safety_factor = -dt    # use negative dt as safety factor
         dt = safety_factor*stability_limit
     elif dt > stability_limit:
         print 'error: dt=%g exceeds the stability limit %g' % \
               (dt, stability_limit)
     Nt = int(round(T/float(dt)))
-    t = linspace(0, Nt*dt, Nt+1)    # mesh points in time
+    t  = linspace(0, Nt*dt, Nt+1)              # mesh points in time
     Cx2 = (c*dt/dx)**2;  Cy2 = (c*dt/dy)**2    # help variables
     dt2 = dt**2
+
+    A = (1 + b*dt/2)**(-1)
+    B = (b*dt/2 - 1)
+    dtdx2 = dt2/(2*dx2)
+    dtdy2 = dt2/(2*dy2)
 
     # Allow f and V to be None or 0
     if f is None or f == 0:
         f = (lambda x, y, t: 0) if version == 'scalar' else \
-            lambda x, y, t: zeros((x.shape[0], y.shape[1]))
-        # or simpler: x*y*0
+            lambda x, y, t: zeros((xv.shape[0], yv.shape[1]))
     if V is None or V == 0:
         V = (lambda x, y: 0) if version == 'scalar' else \
-            lambda x, y: zeros((x.shape[0], y.shape[1]))
+            lambda x, y: zeros((xv.shape[0], yv.shape[1]))
 
 
-    order = 'C'
+    order = 'C' # Store arrays in a column-major order (in memory)
     u   = zeros((Nx+1,Ny+1), order=order)   # solution array
     u_1 = zeros((Nx+1,Ny+1), order=order)   # solution at t-dt
     u_2 = zeros((Nx+1,Ny+1), order=order)   # solution at t-2*dt
     f_a = zeros((Nx+1,Ny+1), order=order)   # for compiled loops
 
-    Ix = range(0, u.shape[0])
+    Ix = range(0, u.shape[0])               # Index set notation
     Iy = range(0, u.shape[1])
     It = range(0, t.shape[0])
 
@@ -97,9 +109,8 @@ def solver(I, V, f, c, Lx, Ly, Nx, Ny, dt, T,
     # or vectorized version (the impact of more efficient loops than
     # in advance_vectorized is small as this is only one step)
     if version == 'scalar':
-        u = advance_scalar(
-            u, u_1, u_2, f, x, y, t, n,
-            Cx2, Cy2, dt2, V, step1=True)
+        u = advance_scalar(u, u_1, u_2, f, x, y, t, n, A, B,
+                            dt2, dtdx2,dtdy2, V, step1=True)
 
     else:
         f_a[:,:] = f(xv, yv, t[n])  # precompute, size as u
@@ -119,10 +130,10 @@ def solver(I, V, f, c, Lx, Ly, Nx, Ny, dt, T,
     for n in It[1:-1]:
         if version == 'scalar':
             # use f(x,y,t) function
-            u = advance(u, u_1, u_2, f, x, y, t, n, Cx2, Cy2, dt2)
+            u = advance_scalar(u, u_1, u_2, f, x, y, t, n, A, B, dt2, dtdx2,dtdy2)
         else:
             f_a[:,:] = f(xv, yv, t[n])  # precompute, size as u
-            u = advance(u, u_1, u_2, f_a, Cx2, Cy2, dt2)
+            u = advance_vectorized(u, u_1, u_2, f_a, Cx2, Cy2, dt2)
 
         if user_action is not None:
             if user_action(u, x, xv, y, yv, t, n+1):
@@ -139,25 +150,35 @@ def solver(I, V, f, c, Lx, Ly, Nx, Ny, dt, T,
 
 
 
-def advance_scalar(u, u_1, u_2, f, x, y, t, n, Cx2, Cy2, dt2,
+def advance_scalar(u, u_1, u_2, f, x, y, t, n, A, B, dt2, dtdx2,dtdy2,
                    V=None, step1=False):
     Ix = range(0, u.shape[0]);  Iy = range(0, u.shape[1])
-    if step1:
-        dt = sqrt(dt2)  # save
-        Cx2 = 0.5*Cx2;  Cy2 = 0.5*Cy2; dt2 = 0.5*dt2  # redefine
-        D1 = 1;  D2 = 0
+    if step1: # Special formula for step 1
+        I = u_1; dt = sqrt(dt2)
+        for i in Ix[1:-1]:
+            for j in Iy[1:-1]:
+                u[i,j] = 0.5*(2*I[i,j] - 2*B*dt*V(x[i],y[j]) \
+                       + dt2*f(x[i], y[j], 0) \
+                       + dtdx2*( (q[i,j]+q[i+1,j]) * (u_1[i+1,j]-u_1[i,j]) )  \
+                       + dtdy2*( (q[i,j]+q[i-1,j]) * (u_1[i,j]-u_1[i-1,j])))
     else:
-        D1 = 2;  D2 = 1
-    for i in Ix[1:-1]:
-        for j in Iy[1:-1]:
-            u_xx = u_1[i-1,j] - 2*u_1[i,j] + u_1[i+1,j]
-            u_yy = u_1[i,j-1] - 2*u_1[i,j] + u_1[i,j+1]
-            u[i,j] = D1*u_1[i,j] - D2*u_2[i,j] + \
-                     Cx2*u_xx + Cy2*u_yy + dt2*f(x[i], y[j], t[n])
-            if step1:
-                u[i,j] += dt*V(x[i], y[j])
-    # Boundary condition u=0
-    j = Iy[0]
+        for i in Ix[1:-1]:
+            for j in Iy[1:-1]:
+                u[i,j] = A*( 2*u_1[i,j] + B*u_2[i,j] + dt2*f(x[i], y[j], t[n])  \
+                       + dtdx2*( (q[i,j]+q[i+1,j]) * (u_1[i+1,j]-u_1[i,j]) )  \
+                       + dtdy2*( (q[i,j]+q[i-1,j]) * (u_1[i,j]-u_1[i-1,j]) ) ) # Using arithmetic averaging of q
+
+    # Neumann boundary condition du/dx = 0
+    i = Ix[0]
+    for j in Iy[1:-1]:
+        u[i,j] = 
+
+    i = Ix[-1]
+        u[]
+
+
+    # Dirichlet boundary condition u=0
+    """j = Iy[0]
     for i in Ix: u[i,j] = 0
     j = Iy[-1]
     for i in Ix: u[i,j] = 0
@@ -165,6 +186,7 @@ def advance_scalar(u, u_1, u_2, f, x, y, t, n, Cx2, Cy2, dt2,
     for j in Iy: u[i,j] = 0
     i = Ix[-1]
     for j in Iy: u[i,j] = 0
+    """
     return u
 
 def advance_vectorized(u, u_1, u_2, f_a, Cx2, Cy2, dt2,
