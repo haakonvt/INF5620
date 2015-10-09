@@ -176,19 +176,25 @@ def advance_scalar(u, u_1, u_2, f, x, y, t, n, A, B, dt2, dtdx2,dtdy2,
     else:
         i = Ix[0] # 1) Boundary where x = 0
         for j in Iy[1:-1]:
-            u[i,j] = A*( 2*u_1[i,j] + B*u_2[i,j] + dt2*f(x[i], y[j], t[n]) \
-                   + dtdx2*2*(q[i,j]+q[i+1,j]) * (u_1[i+1,j]-u_1[i,j])  \
-                   + dtdy2*( (q[i,j]+q[i-1,j]) * (u_1[i,j]-u_1[i-1,j]) ))
+            u[i,j] = A*( 2*u_1[i,j] + B*u_2[i,j] + dt2*f(x[i], y[j], t[n])  \
+                   + dtdx2*2*(q[i,j] + q[i+1,j]) * (u_1[i+1,j] - u_1[i,j])  \
+                   + dtdy2*( (q[i,j] + q[i,j+1]) * (u_1[i,j+1] - u_1[i,j])  \
+                   -         (q[i,j] + q[i,j-1]) * (u_1[i,j]   - u_1[i,j-1])))
 
         i = Ix[-1] # 1) Boundary where x = Nx
-
+        for j in Iy[1:-1]:
+            u[i,j] = A*( 2*u_1[i,j] + B*u_2[i,j] + dt2*f(x[i], y[j], t[n])  \
+            
         j = Iy[0] # 1) Boundary where y = 0
         for i in Ix[1:-1]:
-            u[i,j] = A*( 2*u_1[i,j] + B*u_2[i,j] + dt2*f(x[i], y[j], t[n])  \
-                   + dtdx2*(  (q[i,j]+q[i+1,j]) * (u_1[i+1,j]-u_1[i,j]) )  \
-                   + dtdy2*2*((q[i,j]+q[i-1,j]) * (u_1[i,j]-u_1[i-1,j]) ) )
+            u[i,j] = A*( 2*u_1[i,j] + B*u_2[i,j] + dt2*f(x[i], y[j], t[n])    \
+                   + dtdx2*( (q[i,j] + q[i+1,j]) * (u_1[i+1,j] - u_1[i,j])    \
+                   -         (q[i,j] + q[i-1,j]) * (u_1[i,j]   - u_1[i-1,j])) \
+                   + dtdy2*2*(q[i,j] + q[i,j+1]) * (u_1[i,j+1] - u_1[i,j]) )
 
         j = Iy[-1] # 1) Boundary where y = Ny
+        for i in Ix[1:-1]:
+            u[i,j] = A*( 2*u_1[i,j] + B*u_2[i,j] + dt2*f(x[i], y[j], t[n])  \
 
     return u
 
