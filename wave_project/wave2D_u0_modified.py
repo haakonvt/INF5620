@@ -157,10 +157,11 @@ def advance_scalar(u, u_1, u_2, f, x, y, t, n, A, B, dt2, dtdx2,dtdy2,
         I = u_1; dt = sqrt(dt2)
         for i in Ix[1:-1]:
             for j in Iy[1:-1]:
-                u[i,j] = 0.5*(2*I[i,j] - 2*B*dt*V(x[i],y[j]) \
-                       + dt2*f(x[i], y[j], 0) \
-                       + dtdx2*( (q[i,j] + q[i+1,j]) * (u_1[i+1,j] - u_1[i,j]) )  \
-                       + dtdy2*( (q[i,j] + q[i-1,j]) * (u_1[i,j]   - u_1[i-1,j])))
+                u[i,j] = 0.5*(2*I[i,j] - 2*B*dt*V(x[i],y[j]) + dt2*f(x[i], y[j], 0) \
+                       + dtdx2*( (q[i,j] + q[i+1,j]) * (I[i+1,j] - I[i,j])          \
+                       -         (q[i,j] + q[i-1,j]) * (I[i,j]   - I[i-1,j]))       \
+                       + dtdy2*( (q[i,j] + q[i,j+1]) * (I[i,j+1] - I[i,j])          \
+                       -         (q[i,j] + q[i,j-1]) * (I[i,j]   - I[i,j-1])))
     else: # Compute ALL interior points
         for i in Ix[1:-1]:
             for j in Iy[1:-1]:
@@ -172,8 +173,30 @@ def advance_scalar(u, u_1, u_2, f, x, y, t, n, A, B, dt2, dtdx2,dtdy2,
 
     # Neumann boundary condition du/dx = 0
     if step1:
-        #do something
-    else:
+        i = Ix[0] # 1) Boundary where x = 0
+        for j in Iy[1:-1]:
+            u[i,j] = 0.5*(2*I[i,j] - 2*B*dt*V(x[i],y[j]) + dt2*f(x[i], y[j], 0) \
+                   + dtdx2*2*(q[i,j] + q[i+1,j]) * (I[i+1,j] - I[i,j])          \
+                   + dtdy2*( (q[i,j] + q[i,j+1]) * (I[i,j+1] - I[i,j])          \
+                   -         (q[i,j] + q[i,j-1]) * (I[i,j]   - I[i,j-1])))
+
+        i = Ix[-1] # 1) Boundary where x = Nx
+        for j in Iy[1:-1]:
+            u[i,j] =
+
+        j = Iy[0] # 1) Boundary where y = 0
+        for i in Ix[1:-1]:
+            u[i,j] =
+
+        j = Iy[-1] # 1) Boundary where y = Ny
+        for i in Ix[1:-1]:
+            u[i,j] =
+        # Special formula for the four corner points
+        for i in Ix[0], Ix[-1]:
+            for j in Iy[0], Iy[-1]:
+                u[i,j] =
+
+    else: # Any step NOT first
         i = Ix[0] # 1) Boundary where x = 0
         for j in Iy[1:-1]:
             u[i,j] = A*( 2*u_1[i,j] + B*u_2[i,j] + dt2*f(x[i], y[j], t[n])  \
@@ -201,13 +224,12 @@ def advance_scalar(u, u_1, u_2, f, x, y, t, n, A, B, dt2, dtdx2,dtdy2,
                    + dtdx2*( (q[i,j] + q[i+1,j]) * (u_1[i+1,j] - u_1[i,j])    \
                    -         (q[i,j] + q[i-1,j]) * (u_1[i,j]   - u_1[i-1,j])) \
                    + dtdy2*2*(q[i,j] + q[i,j+1]) * (u_1[i,j+1] - u_1[i,j]) )
-        # Special formula for corners, OBS: MUST CHECK (LOL)
+        # Special formula for the four corner points, OBS: MUST CHECK (LOL)
         for i in Ix[0], Ix[-1]:
             for j in Iy[0], Iy[-1]:
                 u[i,j] = A*( 2*u_1[i,j] + B*u_2[i,j] + dt2*f(x[i], y[j], t[n]) \
                        + dtdx2*2*(q[i,j] + q[i+1,j]) * (u_1[i+1,j] - u_1[i,j]) \
                        + dtdy2*2*(q[i,j] + q[i,j+1]) * (u_1[i,j+1] - u_1[i,j]) )
-
     return u
 
 
