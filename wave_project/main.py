@@ -24,8 +24,12 @@ def c(x,y):
     else:
         return 0.9"""
     return 0.8 # Testing constant wave velocity
-f = None
-V = None
+
+def f(x,y,t):
+    return 1
+
+def V(x,y):
+    return 0
 
 def I(x,y): # Initial distr. = symmetric bell curve
     return 0.8*exp(-80*(x-0.5)**2)*exp(-80*(y-0.5)**2)
@@ -33,13 +37,16 @@ def I(x,y): # Initial distr. = symmetric bell curve
 Lx =  1;  Ly = 1
 Nx =  100; Ny = 100
 dt = -1     # Shortcut for maximum timestep
-T  =  0.1     # Number of seconds to run
+T  =  0.2     # Number of seconds to run
 b  =  0.75  # Damping term, if larger than zero
-global dpi_setting; dpi_setting = 50 # Default is 100
+
+scalar_or_vec = 'vectorized'
+#scalar_or_vec = 'scalar'
+global dpi_setting; dpi_setting = 65 # Default is 100
 
 # Call solver-function
 solver(I, V, f, c, Lx, Ly, Nx, Ny, dt, T, b, \
-       user_action=plot_2D_wave, version='scalar')
+       user_action=plot_2D_wave, version=scalar_or_vec)
 print 'Run the following commands to create a movie-gif-file and remove all plot files:'
 print '>> convert -delay 5 "2d_wave_*.png" "movie.gif"'
 print '>> rm 2d_wave_*.png'

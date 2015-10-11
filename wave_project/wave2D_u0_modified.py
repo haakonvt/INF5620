@@ -1,10 +1,6 @@
 #!/usr/bin/env python
 """
-2D wave equation solved by finite differences::
-
-  dt, cpu_time = solver(I, V, f, c, Lx, Ly, Nx, Ny, dt, T,
-                        user_action=None, version='scalar',
-                        stability_safety_factor=1)
+2D wave equation solved by finite differences
 
 Solve the 2D wave equation u_tt = u_xx + u_yy + f(x,t) on (0,L) with
 u=0 on the boundary and initial condition du/dt=0.
@@ -30,8 +26,10 @@ try:
 except:
     print "Scitools not installed, exiting.."; sys.exit(1)
 
-def solver(I, V, f, c, Lx, Ly, Nx, Ny, dt, T, b,
+def solver(I, V_, f_, c, Lx, Ly, Nx, Ny, dt, T, b,
            user_action=None, version='scalar'):
+
+    order = 'C' # Store arrays in a column-major order (in memory)
 
     x = linspace(0, Lx, Nx+1)  # mesh points in x dir
     y = linspace(0, Ly, Ny+1)  # mesh points in y dir
@@ -61,25 +59,35 @@ def solver(I, V, f, c, Lx, Ly, Nx, Ny, dt, T, b,
     t  = linspace(0, Nt*dt, Nt+1)              # mesh points in time
     dt2 = dt**2
 
+    # Constants for simple calculation
     A = (1 + b*dt/2)**(-1)
     B = (b*dt/2 - 1)
     dtdx2 = dt**2/(2*dx**2)
     dtdy2 = dt**2/(2*dy**2)
 
-    # Allow f and V to be None or 0
-    if f is None or f == 0:
+    # Make f(x,y,t) and V(x,y) ready for computation with different schemes
+    if f_ is None or f_ == 0:
         f = (lambda x, y, t: 0) if version == 'scalar' else \
             lambda x, y, t: zeros((xv.shape[0], yv.shape[1]))
-    if V is None or V == 0:
+    else:
+        if version == 'scalar':
+            f = f_
+    if V_ is None or V_ == 0:
         V = (lambda x, y: 0) if version == 'scalar' else \
             lambda x, y: zeros((xv.shape[0], yv.shape[1]))
+    else:
+        if version == 'scalar':
+            V = V_
 
+    if version == 'vectorized': # Generate and fill matrices for first timestep
+        f = zeros((Nx+1,Ny+1), order=order)
+        V = zeros((Nx+1,Ny+1), order=order)
+        f[:,:] = f_(xv,yv,0)
+        V[:,:] = V_(xv,yv)
 
-    order = 'C' # Store arrays in a column-major order (in memory)
     u   = zeros((Nx+1,Ny+1), order=order)   # solution array
     u_1 = zeros((Nx+1,Ny+1), order=order)   # solution at t-dt
     u_2 = zeros((Nx+1,Ny+1), order=order)   # solution at t-2*dt
-    f_a = zeros((Nx+1,Ny+1), order=order)   # for compiled loops
 
     Ix = range(0, u.shape[0])               # Index set notation
     Iy = range(0, u.shape[1])
@@ -106,19 +114,14 @@ def solver(I, V, f, c, Lx, Ly, Nx, Ny, dt, T, b,
     if version == 'scalar':
         u = advance_scalar(u, u_1, u_2, q, f, x, y, t, n, A, B,
                             dt2, dtdx2,dtdy2, V, step1=True)
-
     else:
-        f_a[:,:] = f(xv, yv, t[n])  # precompute, size as u
-        V_a = V(xv, yv)
-        u = advance_vectorized(
-            u, u_1, u_2, f_a,
-            Cx2, Cy2, dt2, V=V_a, step1=True)
+        u = advance_vectorized(u, u_1, u_2, q, f, x, y, t, n, A, B,
+                            dt2, dtdx2,dtdy2, V, step1=True)
 
     if user_action is not None:
         user_action(u, x, xv, y, yv, t, 1)
 
     # Update data structures for next step
-    #u_2[:] = u_1;  u_1[:] = u  # safe, but slower
     u_2, u_1, u = u_1, u, u_2
 
     # Time loop for all later steps
@@ -126,9 +129,10 @@ def solver(I, V, f, c, Lx, Ly, Nx, Ny, dt, T, b,
         if version == 'scalar':
             # use f(x,y,t) function
             u = advance_scalar(u, u_1, u_2, q, f, x, y, t, n, A, B, dt2, dtdx2,dtdy2)
-        else:
-            f_a[:,:] = f(xv, yv, t[n])  # precompute, size as u
-            u = advance_vectorized(u, u_1, u_2, f_a, Cx2, Cy2, dt2)
+        else: # Use vectorized code
+            f[:,:] = f_(xv, yv, t[n])  # must precompute the matrix f
+            u = advance_vectorized(u, u_1, u_2, q, f, t, n, A, B,
+                                dt2, dtdx2,dtdy2)
 
         if user_action is not None:
             if user_action(u, x, xv, y, yv, t, n+1):
@@ -143,6 +147,118 @@ def solver(I, V, f, c, Lx, Ly, Nx, Ny, dt, T, b,
     # dt might be computed in this function so return the value
     return dt, t1 - t0
 
+
+def advance_vectorized(u, u_1, u_2, q, f, t, n, A, B,
+                    dt2, dtdx2,dtdy2, V=None, step1=False):
+    if step1:
+        I = u_1; dt = sqrt(dt2)
+        u[1:-1,1:-1] = 0.5*(2*I[1:-1,1:-1] - 2*B*dt*V[1:-1,1:-1] + dt2*f[1:-1,1:-1]   \
+               + dtdx2*( (q[1:-1,1:-1] + q[2:,1:-1])  * (I[2:,1:-1]   - I[1:-1,1:-1]) \
+               -         (q[1:-1,1:-1] + q[:-2,1:-1]) * (I[1:-1,1:-1] - I[:-2,1:-1])) \
+               + dtdy2*( (q[1:-1,1:-1] + q[1:-1,2:])  * (I[1:-1,2:]   - I[1:-1,1:-1]) \
+               -         (q[1:-1,1:-1] + q[1:-1,:-2]) * (I[1:-1,1:-1] - I[1:-1,:-2])))
+    else:
+        u[1:-1,1:-1] = A*( 2*u_1[1:-1,1:-1] + B*u_2[1:-1,1:-1] + dt2*f[1:-1,1:-1]         \
+               + dtdx2*( (q[1:-1,1:-1] + q[2:,1:-1])  * (u_1[2:,1:-1]   - u_1[1:-1,1:-1]) \
+               -         (q[1:-1,1:-1] + q[:-2,1:-1]) * (u_1[1:-1,1:-1] - u_1[:-2,1:-1])) \
+               + dtdy2*( (q[1:-1,1:-1] + q[1:-1,2:])  * (u_1[1:-1,2:]   - u_1[1:-1,1:-1]) \
+               -         (q[1:-1,1:-1] + q[1:-1,:-2]) * (u_1[1:-1,1:-1] - u_1[1:-1,:-2])))
+
+    ######################################
+    # Neumann boundary condition du/dn=0 #
+    ######################################
+    if step1:
+        i = Ix[0] # 1) Boundary where x = 0
+        u[i,1:-1] = 0.5*(2*I[i,1:-1] - 2*B*dt*V[i,1:-1] + dt2*f[i,1:-1]        \
+               + dtdx2*2*(q[i,1:-1] + q[i+1,1:-1]) * (I[i+1,1:-1] - I[i,1:-1]) \
+               + dtdy2*( (q[i,1:-1] + q[i,2:])     * (I[i,2:]     - I[i,1:-1]) \
+               -         (q[i,1:-1] + q[i,:-2])    * (I[i,1:-1]   - I[i,:-2])))
+
+        i = Ix[-1] # 1) Boundary where x = Nx
+            u[i,1:-1] = 0.5*(2*I[i,1:-1] - 2*B*dt*V[i,1:-1] + dt2*f[i,1:-1]         \
+                   + dtdx2*2*(q[i,1:-1] + q[i-1,1:-1]) * (I[i-1,1:-1] - I[i,1:-1])  \
+                   + dtdy2*( (q[i,1:-1] + q[i,2:])     * (I[i,2:]     - I[i,1:-1])  \
+                   -         (q[i,1:-1] + q[i,:-2])    * (I[i,1:-1]   - I[i,:-2])))
+
+        j = Iy[0] # 1) Boundary where y = 0
+            u[1:-1:j] = 0.5*(2*I[1:-1:j] - 2*B*dt*V[1:-1:j] + dt2*f[1:-1:j]     \
+                   + dtdx2*( (q[1:-1:j] + q[2:,j]) * (I[2:,j] - I[1:-1:j])      \
+                   -         (q[1:-1:j] + q[:-2:j]) * (I[1:-1:j]   - I[:-2:j])) \
+                   + dtdy2*2*(q[1:-1:j] + q[1:-1:,j+1]) * (I[1:-1:,j+1] - I[1:-1:j]))
+
+        j = Iy[-1] # 1) Boundary where y = Ny
+            u[1:-1:j] = 0.5*(2*I[1:-1:j] - 2*B*dt*V[1:-1:j] + dt2*f[1:-1:j]     \
+                   + dtdx2*( (q[1:-1:j] + q[2:,j]) * (I[2:,j] - I[1:-1:j])      \
+                   -         (q[1:-1:j] + q[:-2:j]) * (I[1:-1:j]   - I[:-2:j])) \
+                   + dtdy2*2*(q[1:-1:j] + q[1:-1:,j-1]) * (I[1:-1:,j-1] - I[1:-1:j]))
+
+        # Special formula for the four corner points
+        i = Ix[0]; j = Iy[0]
+        u[i,j] = 0.5*(2*I[i,j] - 2*B*dt*V[i,j] + dt2*f[i,j]        \
+               + dtdx2*2*(q[i,j] + q[i+1,j]) * (I[i+1,j] - I[i,j]) \
+               + dtdy2*2*(q[i,j] + q[i,j+1]) * (I[i,j+1] - I[i,j]))
+
+        i = Ix[0]; j = Iy[-1]
+        u[i,j] = 0.5*(2*I[i,j] - 2*B*dt*V[i,j] + dt2*f[i,j]        \
+               + dtdx2*2*(q[i,j] + q[i+1,j]) * (I[i+1,j] - I[i,j]) \
+               + dtdy2*2*(q[i,j] + q[i,j-1]) * (I[i,j-1] - I[i,j]))
+
+        i = Ix[-1]; j = Iy[0]
+        u[i,j] = 0.5*(2*I[i,j] - 2*B*dt*V[i,j] + dt2*f[i,j]        \
+               + dtdx2*2*(q[i,j] + q[i-1,j]) * (I[i-1,j] - I[i,j]) \
+               + dtdy2*2*(q[i,j] + q[i,j+1]) * (I[i,j+1] - I[i,j]))
+
+        i = Ix[-1]; j = Iy[-1]
+        u[i,j] = 0.5*(2*I[i,j] - 2*B*dt*V[i,j] + dt2*f[i,j]        \
+               + dtdx2*2*(q[i,j] + q[i-1,j]) * (I[i-1,j] - I[i,j]) \
+               + dtdy2*2*(q[i,j] + q[i,j-1]) * (I[i,j-1] - I[i,j]))
+
+    else: # Any step NOT first
+          i = Ix[0] # 1) Boundary where x = 0
+          u[i,1:-1] = A*( 2*u_1[i,1:-1] + B*u_2[i,1:-1] + dt2*f[i,1:-1]                 \
+                 + dtdx2*2*(q[i,1:-1] + q[i+1,:1:-1]) * (u_1[i+1,:1:-1] - u_1[i,1:-1])  \
+                 + dtdy2*( (q[i,1:-1] + q[i,2:])      * (u_1[i,2:]      - u_1[i,1:-1])  \
+                 -         (q[i,1:-1] + q[i,:-2])     * (u_1[i,1:-1]    - u_1[i,:-2])))
+
+          i = Ix[-1] # 1) Boundary where x = Nx
+          u[i,1:-1] = A*( 2*u_1[i,1:-1] + B*u_2[i,1:-1] + dt2*f[i,1:-1]                 \
+                 + dtdx2*2*(q[i,1:-1] + q[i-1,:1:-1]) * (u_1[i-1,:1:-1] - u_1[i,1:-1])  \
+                 + dtdy2*( (q[i,1:-1] + q[i,2:])      * (u_1[i,2:]      - u_1[i,1:-1])  \
+                 -         (q[i,1:-1] + q[i,:-2])     * (u_1[i,1:-1]    - u_1[i,:-2])))
+
+        j = Iy[0] # 1) Boundary where y = 0
+        u[1:-1,j] = A*( 2*u_1[1:-1,j] + B*u_2[1:-1,j] + dt2*f[1:-1,j]               \
+               + dtdx2*( (q[1:-1,j] + q[2:,j])     * (u_1[2:,j]     - u_1[1:-1,j])  \
+               -         (q[1:-1,j] + q[:-2,j])    * (u_1[1:-1,j]   - u_1[:-2,j]))  \
+               + dtdy2*2*(q[1:-1,j] + q[1:-1,j+1]) * (u_1[1:-1,j+1] - u_1[1:-1,j]) )
+
+        j = Iy[-1] # 1) Boundary where y = Ny
+        u[1:-1,j] = A*( 2*u_1[1:-1,j] + B*u_2[1:-1,j] + dt2*f[1:-1,j]               \
+               + dtdx2*( (q[1:-1,j] + q[2:,j])     * (u_1[2:,j]     - u_1[1:-1,j])  \
+               -         (q[1:-1,j] + q[:-2,j])     * (u_1[1:-1,j]  - u_1[:-2,j]))  \
+               + dtdy2*2*(q[1:-1,j] + q[1:-1,j-1]) * (u_1[1:-1,j-1] - u_1[1:-1,j]) )
+
+        # Special formula for the four corner points
+        i = Ix[0]; j = Iy[0]
+        u[i,j] = A*( 2*u_1[i,j] + B*u_2[i,j] + dt2*f(x[i], y[j], t[n])  \
+               + dtdx2*2*(q[i,j] + q[i+1,j]) * (u_1[i+1,j] - u_1[i,j])  \
+               + dtdy2*2*(q[i,j] + q[i,j+1]) * (u_1[i,j+1] - u_1[i,j]))
+
+        i = Ix[0]; j = Iy[-1]
+        u[i,j] = A*( 2*u_1[i,j] + B*u_2[i,j] + dt2*f(x[i], y[j], t[n])  \
+               + dtdx2*2*(q[i,j] + q[i+1,j]) * (u_1[i+1,j] - u_1[i,j])  \
+               + dtdy2*2*(q[i,j] + q[i,j-1]) * (u_1[i,j-1] - u_1[i,j]))
+
+        i = Ix[-1]; j = Iy[0]
+        u[i,j] = A*( 2*u_1[i,j] + B*u_2[i,j] + dt2*f(x[i], y[j], t[n])  \
+               + dtdx2*2*(q[i,j] + q[i-1,j]) * (u_1[i-1,j] - u_1[i,j])  \
+               + dtdy2*2*(q[i,j] + q[i,j+1]) * (u_1[i,j+1] - u_1[i,j]))
+
+        i = Ix[-1]; j = Iy[-1]
+        u[i,j] = A*( 2*u_1[i,j] + B*u_2[i,j] + dt2*f(x[i], y[j], t[n])  \
+               + dtdx2*2*(q[i,j] + q[i-1,j]) * (u_1[i-1,j] - u_1[i,j])  \
+               + dtdy2*2*(q[i,j] + q[i,j-1]) * (u_1[i,j-1] - u_1[i,j]))
+    return u
 
 
 def advance_scalar(u, u_1, u_2, q, f, x, y, t, n, A, B, dt2, dtdx2,dtdy2,
@@ -269,39 +385,6 @@ def advance_scalar(u, u_1, u_2, q, f, x, y, t, n, A, B, dt2, dtdx2,dtdy2,
 
     return u
 
-
-
-
-
-
-
-
-
-
-def advance_vectorized(u, u_1, u_2, f_a, Cx2, Cy2, dt2,
-                       V=None, step1=False):
-    if step1:
-        dt = sqrt(dt2)  # save
-        Cx2 = 0.5*Cx2;  Cy2 = 0.5*Cy2; dt2 = 0.5*dt2  # redefine
-        D1 = 1;  D2 = 0
-    else:
-        D1 = 2;  D2 = 1
-    u_xx = u_1[:-2,1:-1] - 2*u_1[1:-1,1:-1] + u_1[2:,1:-1]
-    u_yy = u_1[1:-1,:-2] - 2*u_1[1:-1,1:-1] + u_1[1:-1,2:]
-    u[1:-1,1:-1] = D1*u_1[1:-1,1:-1] - D2*u_2[1:-1,1:-1] + \
-                   Cx2*u_xx + Cy2*u_yy + dt2*f_a[1:-1,1:-1]
-    if step1:
-        u[1:-1,1:-1] += dt*V[1:-1, 1:-1]
-    # Boundary condition u=0
-    j = 0
-    u[:,j] = 0
-    j = u.shape[1]-1
-    u[:,j] = 0
-    i = 0
-    u[i,:] = 0
-    i = u.shape[0]-1
-    u[i,:] = 0
-    return u
 
 def quadratic(Nx, Ny, version):
     """Exact discrete solution of the scheme."""
