@@ -30,7 +30,7 @@ try:
 except:
     print "Scitools not installed, exiting.."; sys.exit(1)
 
-def solver(I, V, f, c, Lx, Ly, Nx, Ny, dt, T,
+def solver(I, V, f, c, Lx, Ly, Nx, Ny, dt, T, b,
            user_action=None, version='scalar'):
     """
     if version == 'scalar':
@@ -48,10 +48,11 @@ def solver(I, V, f, c, Lx, Ly, Nx, Ny, dt, T,
     yv = y[newaxis,:]
 
     # Assuming c is a function:
-    for i,x in enumerate(x):
-        for j,y in enumerate(y):
-            c_[i,j] = c(x,y)    # Loop through x and y with indices i,j at the same time
-    c_max = max(c_)             # Pick out the largest value for c(x,y)
+    c_ = zeros((Nx+1,Ny+1), order='c')
+    for i,xx in enumerate(x):
+        for j,yy in enumerate(y):
+            c_[i,j] = c(xx,yy)    # Loop through x and y with indices i,j at the same time
+    c_max = c_.max()            # Pick out the largest value for c(x,y)
     q = c_**2
 
     stability_limit = (1/float(c_max))*(1/sqrt(1/dx**2 + 1/dy**2))
@@ -63,13 +64,12 @@ def solver(I, V, f, c, Lx, Ly, Nx, Ny, dt, T,
               (dt, stability_limit)
     Nt = int(round(T/float(dt)))
     t  = linspace(0, Nt*dt, Nt+1)              # mesh points in time
-    Cx2 = (c*dt/dx)**2;  Cy2 = (c*dt/dy)**2    # help variables
     dt2 = dt**2
 
     A = (1 + b*dt/2)**(-1)
     B = (b*dt/2 - 1)
-    dtdx2 = dt2/(2*dx2)
-    dtdy2 = dt2/(2*dy2)
+    dtdx2 = dt**2/(2*dx**2)
+    dtdy2 = dt**2/(2*dy**2)
 
     # Allow f and V to be None or 0
     if f is None or f == 0:
@@ -109,7 +109,7 @@ def solver(I, V, f, c, Lx, Ly, Nx, Ny, dt, T,
     # or vectorized version (the impact of more efficient loops than
     # in advance_vectorized is small as this is only one step)
     if version == 'scalar':
-        u = advance_scalar(u, u_1, u_2, f, x, y, t, n, A, B,
+        u = advance_scalar(u, u_1, u_2, q, f, x, y, t, n, A, B,
                             dt2, dtdx2,dtdy2, V, step1=True)
 
     else:
@@ -130,7 +130,7 @@ def solver(I, V, f, c, Lx, Ly, Nx, Ny, dt, T,
     for n in It[1:-1]:
         if version == 'scalar':
             # use f(x,y,t) function
-            u = advance_scalar(u, u_1, u_2, f, x, y, t, n, A, B, dt2, dtdx2,dtdy2)
+            u = advance_scalar(u, u_1, u_2, q, f, x, y, t, n, A, B, dt2, dtdx2,dtdy2)
         else:
             f_a[:,:] = f(xv, yv, t[n])  # precompute, size as u
             u = advance_vectorized(u, u_1, u_2, f_a, Cx2, Cy2, dt2)
@@ -150,7 +150,7 @@ def solver(I, V, f, c, Lx, Ly, Nx, Ny, dt, T,
 
 
 
-def advance_scalar(u, u_1, u_2, f, x, y, t, n, A, B, dt2, dtdx2,dtdy2,
+def advance_scalar(u, u_1, u_2, q, f, x, y, t, n, A, B, dt2, dtdx2,dtdy2,
                    V=None, step1=False):
     Ix = range(0, u.shape[0]);  Iy = range(0, u.shape[1])
     if step1: # Special formula for step 1
@@ -182,19 +182,45 @@ def advance_scalar(u, u_1, u_2, f, x, y, t, n, A, B, dt2, dtdx2,dtdy2,
 
         i = Ix[-1] # 1) Boundary where x = Nx
         for j in Iy[1:-1]:
-            u[i,j] =
+            u[i,j] = 0.5*(2*I[i,j] - 2*B*dt*V(x[i],y[j]) + dt2*f(x[i], y[j], 0) \
+                   + dtdx2*2*(q[i,j] + q[i-1,j]) * (I[i-1,j] - I[i,j])          \
+                   + dtdy2*( (q[i,j] + q[i,j+1]) * (I[i,j+1] - I[i,j])          \
+                   -         (q[i,j] + q[i,j-1]) * (I[i,j]   - I[i,j-1])))
 
         j = Iy[0] # 1) Boundary where y = 0
         for i in Ix[1:-1]:
-            u[i,j] =
+            u[i,j] = 0.5*(2*I[i,j] - 2*B*dt*V(x[i],y[j]) + dt2*f(x[i], y[j], 0) \
+                   + dtdx2*( (q[i,j] + q[i+1,j]) * (I[i+1,j] - I[i,j])          \
+                   -         (q[i,j] + q[i-1,j]) * (I[i,j]   - I[i-1,j]))       \
+                   + dtdy2*2*(q[i,j] + q[i,j+1]) * (I[i,j+1] - I[i,j]))
 
         j = Iy[-1] # 1) Boundary where y = Ny
         for i in Ix[1:-1]:
-            u[i,j] =
+            u[i,j] = 0.5*(2*I[i,j] - 2*B*dt*V(x[i],y[j]) + dt2*f(x[i], y[j], 0) \
+                   + dtdx2*( (q[i,j] + q[i+1,j]) * (I[i+1,j] - I[i,j])          \
+                   -         (q[i,j] + q[i-1,j]) * (I[i,j]   - I[i-1,j]))       \
+                   + dtdy2*2*(q[i,j] + q[i,j-1]) * (I[i,j-1] - I[i,j]))
+
         # Special formula for the four corner points
-        for i in Ix[0], Ix[-1]:
-            for j in Iy[0], Iy[-1]:
-                u[i,j] =
+        i = Ix[0]; j = Iy[0]
+        u[i,j] = 0.5*(2*I[i,j] - 2*B*dt*V(x[i],y[j]) + dt2*f(x[i], y[j], 0) \
+               + dtdx2*2*(q[i,j] + q[i+1,j]) * (I[i+1,j] - I[i,j])          \
+               + dtdy2*2*(q[i,j] + q[i,j+1]) * (I[i,j+1] - I[i,j]))
+
+        i = Ix[0]; j = Iy[-1]
+        u[i,j] = 0.5*(2*I[i,j] - 2*B*dt*V(x[i],y[j]) + dt2*f(x[i], y[j], 0) \
+               + dtdx2*2*(q[i,j] + q[i+1,j]) * (I[i+1,j] - I[i,j])          \
+               + dtdy2*2*(q[i,j] + q[i,j-1]) * (I[i,j-1] - I[i,j]))
+
+        i = Ix[-1]; j = Iy[0]
+        u[i,j] = 0.5*(2*I[i,j] - 2*B*dt*V(x[i],y[j]) + dt2*f(x[i], y[j], 0) \
+               + dtdx2*2*(q[i,j] + q[i-1,j]) * (I[i-1,j] - I[i,j])          \
+               + dtdy2*2*(q[i,j] + q[i,j+1]) * (I[i,j+1] - I[i,j]))
+
+        i = Ix[-1]; j = Iy[-1]
+        u[i,j] = 0.5*(2*I[i,j] - 2*B*dt*V(x[i],y[j]) + dt2*f(x[i], y[j], 0) \
+               + dtdx2*2*(q[i,j] + q[i-1,j]) * (I[i-1,j] - I[i,j])          \
+               + dtdy2*2*(q[i,j] + q[i,j-1]) * (I[i,j-1] - I[i,j]))
 
     else: # Any step NOT first
         i = Ix[0] # 1) Boundary where x = 0
@@ -207,7 +233,7 @@ def advance_scalar(u, u_1, u_2, f, x, y, t, n, A, B, dt2, dtdx2,dtdy2,
         i = Ix[-1] # 1) Boundary where x = Nx
         for j in Iy[1:-1]:
             u[i,j] = A*( 2*u_1[i,j] + B*u_2[i,j] + dt2*f(x[i], y[j], t[n])  \
-                   + dtdx2*2*(q[i,j] + q[i+1,j]) * (u_1[i+1,j] - u_1[i,j])  \
+                   + dtdx2*2*(q[i,j] + q[i-1,j]) * (u_1[i-1,j] - u_1[i,j])  \
                    + dtdy2*( (q[i,j] + q[i,j+1]) * (u_1[i,j+1] - u_1[i,j])  \
                    -         (q[i,j] + q[i,j-1]) * (u_1[i,j]   - u_1[i,j-1])))
 
@@ -223,13 +249,29 @@ def advance_scalar(u, u_1, u_2, f, x, y, t, n, A, B, dt2, dtdx2,dtdy2,
             u[i,j] = A*( 2*u_1[i,j] + B*u_2[i,j] + dt2*f(x[i], y[j], t[n])    \
                    + dtdx2*( (q[i,j] + q[i+1,j]) * (u_1[i+1,j] - u_1[i,j])    \
                    -         (q[i,j] + q[i-1,j]) * (u_1[i,j]   - u_1[i-1,j])) \
-                   + dtdy2*2*(q[i,j] + q[i,j+1]) * (u_1[i,j+1] - u_1[i,j]) )
-        # Special formula for the four corner points, OBS: MUST CHECK (LOL)
-        for i in Ix[0], Ix[-1]:
-            for j in Iy[0], Iy[-1]:
-                u[i,j] = A*( 2*u_1[i,j] + B*u_2[i,j] + dt2*f(x[i], y[j], t[n]) \
-                       + dtdx2*2*(q[i,j] + q[i+1,j]) * (u_1[i+1,j] - u_1[i,j]) \
-                       + dtdy2*2*(q[i,j] + q[i,j+1]) * (u_1[i,j+1] - u_1[i,j]) )
+                   + dtdy2*2*(q[i,j] + q[i,j-1]) * (u_1[i,j-1] - u_1[i,j]) )
+
+        # Special formula for the four corner points
+        i = Ix[0]; j = Iy[0]
+        u[i,j] = A*( 2*u_1[i,j] + B*u_2[i,j] + dt2*f(x[i], y[j], t[n])  \
+               + dtdx2*2*(q[i,j] + q[i+1,j]) * (u_1[i+1,j] - u_1[i,j])  \
+               + dtdy2*2*(q[i,j] + q[i,j+1]) * (u_1[i,j+1] - u_1[i,j]))
+
+        i = Ix[0]; j = Iy[-1]
+        u[i,j] = A*( 2*u_1[i,j] + B*u_2[i,j] + dt2*f(x[i], y[j], t[n])  \
+               + dtdx2*2*(q[i,j] + q[i+1,j]) * (u_1[i+1,j] - u_1[i,j])  \
+               + dtdy2*2*(q[i,j] + q[i,j-1]) * (u_1[i,j-1] - u_1[i,j]))
+
+        i = Ix[-1]; j = Iy[0]
+        u[i,j] = A*( 2*u_1[i,j] + B*u_2[i,j] + dt2*f(x[i], y[j], t[n])  \
+               + dtdx2*2*(q[i,j] + q[i-1,j]) * (u_1[i-1,j] - u_1[i,j])  \
+               + dtdy2*2*(q[i,j] + q[i,j+1]) * (u_1[i,j+1] - u_1[i,j]))
+
+        i = Ix[-1]; j = Iy[-1]
+        u[i,j] = A*( 2*u_1[i,j] + B*u_2[i,j] + dt2*f(x[i], y[j], t[n])  \
+               + dtdx2*2*(q[i,j] + q[i-1,j]) * (u_1[i-1,j] - u_1[i,j])  \
+               + dtdy2*2*(q[i,j] + q[i,j-1]) * (u_1[i,j-1] - u_1[i,j]))
+
     return u
 
 
