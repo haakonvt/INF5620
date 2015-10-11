@@ -100,7 +100,7 @@ def solver(I, V_, f_, c, Lx, Ly, Nx, Ny, dt, T, b,
         u = advance_scalar(u, u_1, u_2, q, f, x, y, t, n, A, B,
                             dt2, dtdx2,dtdy2, V, step1=True)
     else:
-        u = advance_vectorized(u, u_1, u_2, q, f, x, y, t, n, A, B,
+        u = advance_vectorized(u, u_1, u_2, q, f, t, n, A, B,
                             dt2, dtdx2,dtdy2, V, step1=True)
 
     if user_action is not None:
@@ -135,6 +135,7 @@ def solver(I, V_, f_, c, Lx, Ly, Nx, Ny, dt, T, b,
 
 def advance_vectorized(u, u_1, u_2, q, f, t, n, A, B,
                     dt2, dtdx2,dtdy2, V=None, step1=False):
+    Ix = range(0, u.shape[0]);  Iy = range(0, u.shape[1])
     if step1:
         I = u_1; dt = sqrt(dt2)
         u[1:-1,1:-1] = 0.5*(2*I[1:-1,1:-1] - 2*B*dt*V[1:-1,1:-1] + dt2*f[1:-1,1:-1]   \
@@ -160,22 +161,22 @@ def advance_vectorized(u, u_1, u_2, q, f, t, n, A, B,
                -         (q[i,1:-1] + q[i,:-2])    * (I[i,1:-1]   - I[i,:-2])))
 
         i = Ix[-1] # 1) Boundary where x = Nx
-            u[i,1:-1] = 0.5*(2*I[i,1:-1] - 2*B*dt*V[i,1:-1] + dt2*f[i,1:-1]        \
-                   + dtdx2*2*(q[i,1:-1] + q[i-1,1:-1]) * (I[i-1,1:-1] - I[i,1:-1]) \
-                   + dtdy2*( (q[i,1:-1] + q[i,2:])     * (I[i,2:]     - I[i,1:-1]) \
-                   -         (q[i,1:-1] + q[i,:-2])    * (I[i,1:-1]   - I[i,:-2])))
+        u[i,1:-1] = 0.5*(2*I[i,1:-1] - 2*B*dt*V[i,1:-1] + dt2*f[i,1:-1]        \
+               + dtdx2*2*(q[i,1:-1] + q[i-1,1:-1]) * (I[i-1,1:-1] - I[i,1:-1]) \
+               + dtdy2*( (q[i,1:-1] + q[i,2:])     * (I[i,2:]     - I[i,1:-1]) \
+               -         (q[i,1:-1] + q[i,:-2])    * (I[i,1:-1]   - I[i,:-2])))
 
         j = Iy[0] # 1) Boundary where y = 0
-            u[1:-1:j] = 0.5*(2*I[1:-1:j] - 2*B*dt*V[1:-1:j] + dt2*f[1:-1:j]          \
-                   + dtdx2*( (q[1:-1:j] + q[2:,j])      * (I[2:,j]      - I[1:-1:j]) \
-                   -         (q[1:-1:j] + q[:-2:j])     * (I[1:-1:j]    - I[:-2:j])) \
-                   + dtdy2*2*(q[1:-1:j] + q[1:-1:,j+1]) * (I[1:-1:,j+1] - I[1:-1:j]))
+        u[1:-1,j] = 0.5*(2*I[1:-1,j] - 2*B*dt*V[1:-1,j] + dt2*f[1:-1,j]          \
+               + dtdx2*( (q[1:-1,j] + q[2:,j])      * (I[2:,j]      - I[1:-1,j]) \
+               -         (q[1:-1,j] + q[:-2,j])     * (I[1:-1,j]    - I[:-2,j])) \
+               + dtdy2*2*(q[1:-1,j] + q[1:-1:,j+1]) * (I[1:-1:,j+1] - I[1:-1,j]))
 
         j = Iy[-1] # 1) Boundary where y = Ny
-            u[1:-1:j] = 0.5*(2*I[1:-1:j] - 2*B*dt*V[1:-1:j] + dt2*f[1:-1:j]          \
-                   + dtdx2*( (q[1:-1:j] + q[2:,j])      * (I[2:,j]      - I[1:-1:j]) \
-                   -         (q[1:-1:j] + q[:-2:j])     * (I[1:-1:j]    - I[:-2:j])) \
-                   + dtdy2*2*(q[1:-1:j] + q[1:-1:,j-1]) * (I[1:-1:,j-1] - I[1:-1:j]))
+        u[1:-1,j] = 0.5*(2*I[1:-1,j] - 2*B*dt*V[1:-1,j] + dt2*f[1:-1,j]          \
+               + dtdx2*( (q[1:-1,j] + q[2:,j])      * (I[2:,j]      - I[1:-1,j]) \
+               -         (q[1:-1,j] + q[:-2,j])     * (I[1:-1,j]    - I[:-2,j])) \
+               + dtdy2*2*(q[1:-1,j] + q[1:-1:,j-1]) * (I[1:-1:,j-1] - I[1:-1,j]))
 
         # Special formula for the four corner points
         i = Ix[0]; j = Iy[0]
@@ -199,17 +200,17 @@ def advance_vectorized(u, u_1, u_2, q, f, t, n, A, B,
                + dtdy2*2*(q[i,j] + q[i,j-1]) * (I[i,j-1] - I[i,j]))
 
     else: # Any step NOT first
-          i = Ix[0] # 1) Boundary where x = 0
-          u[i,1:-1] = A*( 2*u_1[i,1:-1] + B*u_2[i,1:-1] + dt2*f[i,1:-1]                 \
-                 + dtdx2*2*(q[i,1:-1] + q[i+1,:1:-1]) * (u_1[i+1,:1:-1] - u_1[i,1:-1])  \
-                 + dtdy2*( (q[i,1:-1] + q[i,2:])      * (u_1[i,2:]      - u_1[i,1:-1])  \
-                 -         (q[i,1:-1] + q[i,:-2])     * (u_1[i,1:-1]    - u_1[i,:-2])))
+        i = Ix[0] # 1) Boundary where x = 0
+        u[i,1:-1] = A*( 2*u_1[i,1:-1] + B*u_2[i,1:-1] + dt2*f[i,1:-1]                 \
+             + dtdx2*2*(q[i,1:-1] + q[i+1,:1:-1]) * (u_1[i+1,:1:-1] - u_1[i,1:-1])  \
+             + dtdy2*( (q[i,1:-1] + q[i,2:])      * (u_1[i,2:]      - u_1[i,1:-1])  \
+             -         (q[i,1:-1] + q[i,:-2])     * (u_1[i,1:-1]    - u_1[i,:-2])))
 
-          i = Ix[-1] # 1) Boundary where x = Nx
-          u[i,1:-1] = A*( 2*u_1[i,1:-1] + B*u_2[i,1:-1] + dt2*f[i,1:-1]                 \
-                 + dtdx2*2*(q[i,1:-1] + q[i-1,:1:-1]) * (u_1[i-1,:1:-1] - u_1[i,1:-1])  \
-                 + dtdy2*( (q[i,1:-1] + q[i,2:])      * (u_1[i,2:]      - u_1[i,1:-1])  \
-                 -         (q[i,1:-1] + q[i,:-2])     * (u_1[i,1:-1]    - u_1[i,:-2])))
+        i = Ix[-1] # 1) Boundary where x = Nx
+        u[i,1:-1] = A*( 2*u_1[i,1:-1] + B*u_2[i,1:-1] + dt2*f[i,1:-1]                 \
+             + dtdx2*2*(q[i,1:-1] + q[i-1,:1:-1]) * (u_1[i-1,:1:-1] - u_1[i,1:-1])  \
+             + dtdy2*( (q[i,1:-1] + q[i,2:])      * (u_1[i,2:]      - u_1[i,1:-1])  \
+             -         (q[i,1:-1] + q[i,:-2])     * (u_1[i,1:-1]    - u_1[i,:-2])))
 
         j = Iy[0] # 1) Boundary where y = 0
         u[1:-1,j] = A*( 2*u_1[1:-1,j] + B*u_2[1:-1,j] + dt2*f[1:-1,j]               \
