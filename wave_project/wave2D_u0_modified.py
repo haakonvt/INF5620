@@ -58,7 +58,7 @@ def solver(I, V, f, c, Lx, Ly, Nx, Ny, dt, T, b,
     stability_limit = (1/float(c_max))*(1/sqrt(1/dx**2 + 1/dy**2))
     if dt <= 0:                # shortcut for max time step is to use i.e. dt = -1
         safety_factor = -dt    # use negative dt as safety factor
-        dt = safety_factor*stability_limit
+        dt = safety_factor*stability_limit*0.5
     elif dt > stability_limit:
         print 'error: dt=%g exceeds the stability limit %g' % \
               (dt, stability_limit)
