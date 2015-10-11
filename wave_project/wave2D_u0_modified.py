@@ -12,7 +12,7 @@ except:
     print "Scitools not installed, exiting.."; sys.exit(1)
 
 def solver(I, V_, f_, c, Lx, Ly, Nx, Ny, dt, T, b,
-           user_action=None, version='scalar'):
+           user_action=None, version='scalar', show_cpu_time=False):
 
     order = 'C' # Store arrays in a column-major order (in memory)
 
@@ -35,7 +35,7 @@ def solver(I, V_, f_, c, Lx, Ly, Nx, Ny, dt, T, b,
     stability_limit = (1/float(c_max))*(1/sqrt(1/dx**2 + 1/dy**2))
     if dt <= 0:                # shortcut for max time step is to use i.e. dt = -1
         safety_factor = -dt    # use negative dt as safety factor
-        extra_factor  = 0.5    # Make dt even smaller
+        extra_factor  = 1    # Make dt even smaller
         dt = safety_factor*stability_limit*extra_factor
     elif dt > stability_limit:
         print 'error: dt=%g exceeds the stability limit %g' % \
@@ -114,12 +114,14 @@ def solver(I, V_, f_, c, Lx, Ly, Nx, Ny, dt, T, b,
         if version == 'scalar':
             # use f(x,y,t) function
             u,cpu_time = advance_scalar(u, u_1, u_2, q, f, x, y, t, n, A, B, dt2, dtdx2,dtdy2)
-            print "Timestep:", n, "took: %.3f" %cpu_time, "sec to compute with scalar code"
+            if show_cpu_time:
+                print "Timestep:", n, "took: %.3f" %cpu_time, "sec to compute with scalar code"
         else: # Use vectorized code
             f[:,:] = f_(xv, yv, t[n])  # must precompute the matrix f
             u,cpu_time = advance_vectorized(u, u_1, u_2, q, f, t, n, A, B,
                                 dt2, dtdx2,dtdy2)
-            print "Timestep:", n, "took: %.3f" %cpu_time, "sec to compute with vectorized code"
+            if show_cpu_time:
+                print "Timestep:", n, "took: %.3f" %cpu_time, "sec to compute with vectorized code"
 
         if user_action is not None:
             if user_action(u, x, xv, y, yv, t, n+1):

@@ -52,7 +52,7 @@ global dpi_setting; dpi_setting = 150 # Default is 100
 
 # Call solver-function
 solver(I, V, f, c, Lx, Ly, Nx, Ny, dt, T, b, \
-       user_action=plot_2D_wave, version=scalar_or_vec)
+       user_action=plot_2D_wave, version=scalar_or_vec, show_cpu_time=True)
 print 'Run the following commands to create a movie-gif-file and remove all plot files:'
 print '>> convert -delay 5 "2d_wave_*.png" "movie.gif"'
 print '>> rm 2d_wave_*.png'
