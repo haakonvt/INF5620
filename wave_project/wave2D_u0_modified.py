@@ -97,10 +97,10 @@ def solver(I, V_, f_, c, Lx, Ly, Nx, Ny, dt, T, b,
     # or vectorized version (the impact of more efficient loops than
     # in advance_vectorized is small as this is only one step)
     if version == 'scalar':
-        u = advance_scalar(u, u_1, u_2, q, f, x, y, t, n, A, B,
+        u,cpu_time = advance_scalar(u, u_1, u_2, q, f, x, y, t, n, A, B,
                             dt2, dtdx2,dtdy2, V, step1=True)
     else:
-        u = advance_vectorized(u, u_1, u_2, q, f, t, n, A, B,
+        u,cpu_time = advance_vectorized(u, u_1, u_2, q, f, t, n, A, B,
                             dt2, dtdx2,dtdy2, V, step1=True)
 
     if user_action is not None:
@@ -113,11 +113,13 @@ def solver(I, V_, f_, c, Lx, Ly, Nx, Ny, dt, T, b,
     for n in It[1:-1]:
         if version == 'scalar':
             # use f(x,y,t) function
-            u = advance_scalar(u, u_1, u_2, q, f, x, y, t, n, A, B, dt2, dtdx2,dtdy2)
+            u,cpu_time = advance_scalar(u, u_1, u_2, q, f, x, y, t, n, A, B, dt2, dtdx2,dtdy2)
+            print "Timestep:", n, "took: %.3f" %cpu_time, "sec to compute with scalar code"
         else: # Use vectorized code
             f[:,:] = f_(xv, yv, t[n])  # must precompute the matrix f
-            u = advance_vectorized(u, u_1, u_2, q, f, t, n, A, B,
+            u,cpu_time = advance_vectorized(u, u_1, u_2, q, f, t, n, A, B,
                                 dt2, dtdx2,dtdy2)
+            print "Timestep:", n, "took: %.3f" %cpu_time, "sec to compute with vectorized code"
 
         if user_action is not None:
             if user_action(u, x, xv, y, yv, t, n+1):
@@ -135,6 +137,8 @@ def solver(I, V_, f_, c, Lx, Ly, Nx, Ny, dt, T, b,
 
 def advance_vectorized(u, u_1, u_2, q, f, t, n, A, B,
                     dt2, dtdx2,dtdy2, V=None, step1=False):
+    """ Haakon (me) code  """
+    t1 = time.clock()
     Ix = range(0, u.shape[0]);  Iy = range(0, u.shape[1])
     if step1:
         I = u_1; dt = sqrt(dt2)
@@ -202,13 +206,13 @@ def advance_vectorized(u, u_1, u_2, q, f, t, n, A, B,
     else: # Any step NOT first
         i = Ix[0] # 1) Boundary where x = 0
         u[i,1:-1] = A*( 2*u_1[i,1:-1] + B*u_2[i,1:-1] + dt2*f[i,1:-1]                 \
-             + dtdx2*2*(q[i,1:-1] + q[i+1,:1:-1]) * (u_1[i+1,:1:-1] - u_1[i,1:-1])  \
+             + dtdx2*2*(q[i,1:-1] + q[i+1,1:-1]) * (u_1[i+1,1:-1] - u_1[i,1:-1])  \
              + dtdy2*( (q[i,1:-1] + q[i,2:])      * (u_1[i,2:]      - u_1[i,1:-1])  \
              -         (q[i,1:-1] + q[i,:-2])     * (u_1[i,1:-1]    - u_1[i,:-2])))
 
         i = Ix[-1] # 1) Boundary where x = Nx
         u[i,1:-1] = A*( 2*u_1[i,1:-1] + B*u_2[i,1:-1] + dt2*f[i,1:-1]                 \
-             + dtdx2*2*(q[i,1:-1] + q[i-1,:1:-1]) * (u_1[i-1,:1:-1] - u_1[i,1:-1])  \
+             + dtdx2*2*(q[i,1:-1] + q[i-1,1:-1]) * (u_1[i-1,1:-1] - u_1[i,1:-1])  \
              + dtdy2*( (q[i,1:-1] + q[i,2:])      * (u_1[i,2:]      - u_1[i,1:-1])  \
              -         (q[i,1:-1] + q[i,:-2])     * (u_1[i,1:-1]    - u_1[i,:-2])))
 
@@ -221,7 +225,7 @@ def advance_vectorized(u, u_1, u_2, q, f, t, n, A, B,
         j = Iy[-1] # 1) Boundary where y = Ny
         u[1:-1,j] = A*( 2*u_1[1:-1,j] + B*u_2[1:-1,j] + dt2*f[1:-1,j]               \
                + dtdx2*( (q[1:-1,j] + q[2:,j])     * (u_1[2:,j]     - u_1[1:-1,j])  \
-               -         (q[1:-1,j] + q[:-2,j])     * (u_1[1:-1,j]  - u_1[:-2,j]))  \
+               -         (q[1:-1,j] + q[:-2,j])    * (u_1[1:-1,j]   - u_1[:-2,j]))  \
                + dtdy2*2*(q[1:-1,j] + q[1:-1,j-1]) * (u_1[1:-1,j-1] - u_1[1:-1,j]) )
 
         # Special formula for the four corner points
@@ -244,11 +248,13 @@ def advance_vectorized(u, u_1, u_2, q, f, t, n, A, B,
         u[i,j] = A*( 2*u_1[i,j] + B*u_2[i,j] + dt2*f[i,j]  \
                + dtdx2*2*(q[i,j] + q[i-1,j]) * (u_1[i-1,j] - u_1[i,j])  \
                + dtdy2*2*(q[i,j] + q[i,j-1]) * (u_1[i,j-1] - u_1[i,j]))
-    return u
+    CPU_time = time.clock() - t1
+    return u,CPU_time
 
 
 def advance_scalar(u, u_1, u_2, q, f, x, y, t, n, A, B, dt2, dtdx2,dtdy2,
                    V=None, step1=False):
+    t1 = time.clock()
     Ix = range(0, u.shape[0]);  Iy = range(0, u.shape[1])
     if step1: # Special formula for step 1
         I = u_1; dt = sqrt(dt2)
@@ -368,5 +374,5 @@ def advance_scalar(u, u_1, u_2, q, f, x, y, t, n, A, B, dt2, dtdx2,dtdy2,
         u[i,j] = A*( 2*u_1[i,j] + B*u_2[i,j] + dt2*f(x[i], y[j], t[n])  \
                + dtdx2*2*(q[i,j] + q[i-1,j]) * (u_1[i-1,j] - u_1[i,j])  \
                + dtdy2*2*(q[i,j] + q[i,j-1]) * (u_1[i,j-1] - u_1[i,j]))
-
-    return u
+    CPU_time = time.clock() - t1
+    return u, CPU_time
