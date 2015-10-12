@@ -7,12 +7,12 @@ Original code: Hans Petter Langtangen (not much left of it...)
 """
 import time, sys
 try:
-    from scitools.std import linspace, newaxis, zeros, sqrt, exp, meshgrid
+    from scitools.std import linspace, newaxis, zeros, sqrt, exp, meshgrid, pi, cos
 except:
     print "Scitools not installed, exiting.."; sys.exit(1)
 
 def solver(I, V_, f_, c, Lx, Ly, Nx, Ny, dt, T, b,
-           user_action=None, version='scalar', show_cpu_time=False,display_warnings=True):
+           user_action=None, version='scalar', skip_every_n_frame=10, show_cpu_time=False,display_warnings=True):
 
     order = 'C' # Store arrays in a column-major order (in memory)
 
@@ -89,7 +89,7 @@ def solver(I, V_, f_, c, Lx, Ly, Nx, Ny, dt, T, b,
         u_1[:,:] = I(xv, yv)
 
     if user_action is not None:
-        user_action(u_1, x, xv, y, yv, t, 0)
+        user_action(u_1, x, xv, y, yv, t, 0, skip_every_n_frame)
 
     # Special formula for first time step
     n = 0
@@ -104,7 +104,7 @@ def solver(I, V_, f_, c, Lx, Ly, Nx, Ny, dt, T, b,
                             dt2, dtdx2,dtdy2, V, step1=True)
 
     if user_action is not None:
-        user_action(u, x, xv, y, yv, t, 1)
+        user_action(u, x, xv, y, yv, t, 1, skip_every_n_frame)
 
     # Update data structures for next step
     u_2, u_1, u = u_1, u, u_2
@@ -115,16 +115,20 @@ def solver(I, V_, f_, c, Lx, Ly, Nx, Ny, dt, T, b,
             # use f(x,y,t) function
             u,cpu_time = advance_scalar(u, u_1, u_2, q, f, x, y, t, n, A, B, dt2, dtdx2,dtdy2)
             if show_cpu_time:
-                print "Timestep:", n, "took: %.3f" %cpu_time, "sec to compute with scalar code"
+                percent = (float(n)/It[-2])*100.0
+                sys.stdout.write("\rLast step took: %.3f sec with [scalar-code]. Computation is %d%% " %(cpu_time,percent))
+                sys.stdout.flush()
         else: # Use vectorized code
             f[:,:] = f_(xv, yv, t[n])  # must precompute the matrix f
             u,cpu_time = advance_vectorized(u, u_1, u_2, q, f, t, n, A, B,
                                 dt2, dtdx2,dtdy2)
             if show_cpu_time:
-                print "Timestep:", n, "took: %.3f" %cpu_time, "sec to compute with vectorized code"
+                percent = (float(n)/It[-2])*100.0
+                sys.stdout.write("\rLast step took: %.5f sec with [vec-code]. Computation is %d%% " %(cpu_time,percent))
+                sys.stdout.flush()
 
         if user_action is not None:
-            if user_action(u, x, xv, y, yv, t, n+1):
+            if user_action(u, x, xv, y, yv, t, n+1, skip_every_n_frame):
                 break
 
         # Update data structures for next step

@@ -37,14 +37,13 @@ def test_constant():
                 constant_solution(Nx, Ny, ver)
                 print '- largest error:', max(E)
 
-
 class LastTimestep:
+    """Need class to save values (also after the call has been made)"""
     def __call__(self, u, x, xv, y, yv, t, n):
         last_timestep = len(t)-1
         if n == last_timestep:
             self.x = x.copy(); self.y = y.copy()
             self.u = u.copy(); self.t = t[n]
-
 
 def test_plug():
     """Check that an initial plug is correct back after one period."""
@@ -94,12 +93,12 @@ def test_plug():
     for Is,Iv in [(Ixs,Ixv), (Iys,Iyv)]:
         # Test plug wave in x/y-direction with scalar and vectorized code
         solver(Is, V, f, c, Lx, Ly, Nx, Ny, dt, T, b,
-            user_action=lasttimestep, version='scalar',display_warnings=False)
+            user_action=lasttimestep, version='scalar',skip_every_n_frame=0, display_warnings=False)
         u_scalar = lasttimestep.u # Store last u
         #solver(Is, V, f, c, Lx, Ly, Nx, Ny, dt, T, b, user_action=plot_2D_wave, version='scalar')
         #raw_input('check frames and enter...')
         solver(Iv, V, f, c, Lx, Ly, Nx, Ny, dt, T, b,
-            user_action=lasttimestep, version='vectorized',display_warnings=False)
+            user_action=lasttimestep, version='vectorized',skip_every_n_frame=0, display_warnings=False)
         u_vec = lasttimestep.u
         #solver(Iv, V, f, c, Lx, Ly, Nx, Ny, dt, T, b, user_action=plot_2D_wave, version='vectorized')
 
