@@ -12,7 +12,7 @@ except:
     print "Scitools not installed, exiting.."; sys.exit(1)
 
 def solver(I, V_, f_, c, Lx, Ly, Nx, Ny, dt, T, b,
-           user_action=None, version='scalar', show_cpu_time=False):
+           user_action=None, version='scalar', show_cpu_time=False,display_warnings=True):
 
     order = 'C' # Store arrays in a column-major order (in memory)
 
@@ -29,17 +29,17 @@ def solver(I, V_, f_, c, Lx, Ly, Nx, Ny, dt, T, b,
     for i,xx in enumerate(x):
         for j,yy in enumerate(y):
             c_[i,j] = c(xx,yy)  # Loop through x and y with indices i,j at the same time
-    c_max = c_.max()            # Pick out the largest value for c(x,y)
+    c_max = c_.max()            # Pick out the largest value from c(x,y)
     q = c_**2
 
     stability_limit = (1/float(c_max))*(1/sqrt(1/dx**2 + 1/dy**2))
     if dt <= 0:                # shortcut for max time step is to use i.e. dt = -1
         safety_factor = -dt    # use negative dt as safety factor
-        extra_factor  = 1    # Make dt even smaller
+        extra_factor  = 1      # Easy way to make dt even smaller
         dt = safety_factor*stability_limit*extra_factor
-    elif dt > stability_limit:
-        print 'error: dt=%g exceeds the stability limit %g' % \
-              (dt, stability_limit)
+    elif dt > stability_limit and display_warnings:
+        print '\nWarning: (Unless you are testing the program), be aware that'
+        print 'dt: %g is currently exceeding the stability limit: %g\n' %(dt, stability_limit)
     Nt = int(round(T/float(dt)))
     t  = linspace(0, Nt*dt, Nt+1)              # mesh points in time
     dt2 = dt**2

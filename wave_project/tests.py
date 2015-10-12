@@ -1,3 +1,4 @@
+from main import plot_2D_wave
 from wave2D_u0_modified import *
 
 def constant_solution(Nx, Ny, version):
@@ -37,5 +38,83 @@ def test_constant():
                 print '- largest error:', max(E)
 
 
+class LastTimestep:
+    def __call__(self, u, x, xv, y, yv, t, n):
+        last_timestep = len(t)-1
+        if n == last_timestep:
+            self.x = x.copy(); self.y = y.copy()
+            self.u = u.copy(); self.t = t[n]
+
+
+def test_plug():
+    """Check that an initial plug is correct back after one period."""
+    V = lambda x, y   : 0
+    f = lambda x, y, t: 0
+    c = lambda x, y   : 1
+
+    Lx = 1.1; Ly = 1.1
+    Nx = 11;  Ny = 11
+    dt = 0.1;  T = 1.1
+    b  = 0 # No damping term!
+
+    def Ixs(x,y): # For scalar scheme
+        if abs(x-Lx/2.0) > 0.1:
+            return 0
+        else:
+            return 0.2
+
+    def Ixv(x,y):
+        I = zeros(x.shape)
+        for i in range(len(x[:,0])):
+            if abs(x[i,0]-Lx/2.0) > 0.1:
+                I[i,0] = 0
+            else:
+                I[i,0] = 0.2
+        return I
+
+    def Iys(x,y):
+        if abs(y-Ly/2.0) > 0.1:
+            return 0
+        else:
+            return 0.2
+
+    def Iyv(x,y):
+        I = zeros(y.shape)
+        for j in range(len(y[0,:])):
+            if abs(y[0,j]-Ly/2.0) > 0.1:
+                I[0,j] = 0
+            else:
+                I[0,j] = 0.2
+        return I
+
+    # Make user action an LastTimestep-instance
+    lasttimestep = LastTimestep()
+
+    # Check I_scalar and I_vectorized in both x- and y-direction:
+    for Is,Iv in [(Ixs,Ixv), (Iys,Iyv)]:
+        # Test plug wave in x/y-direction with scalar and vectorized code
+        solver(Is, V, f, c, Lx, Ly, Nx, Ny, dt, T, b,
+            user_action=lasttimestep, version='scalar',display_warnings=False)
+        u_scalar = lasttimestep.u # Store last u
+        #solver(Is, V, f, c, Lx, Ly, Nx, Ny, dt, T, b, user_action=plot_2D_wave, version='scalar')
+        #raw_input('check frames and enter...')
+        solver(Iv, V, f, c, Lx, Ly, Nx, Ny, dt, T, b,
+            user_action=lasttimestep, version='vectorized',display_warnings=False)
+        u_vec = lasttimestep.u
+        #solver(Iv, V, f, c, Lx, Ly, Nx, Ny, dt, T, b, user_action=plot_2D_wave, version='vectorized')
+
+        diff = abs(u_scalar - u_vec).max()
+        tol = 1E-15
+        assert diff < tol
+
+        u_0 = zeros((Nx+1,Ny+1))
+        u_0[:,:] = Iv(lasttimestep.x[:,newaxis], lasttimestep.y[newaxis,:])
+        diff1 = abs(u_scalar - u_0).max()
+        diff2 = abs(u_vec    - u_0).max() # This is basicly already tested, 'u_vec_x = u_scalar_x'
+        assert diff1 < tol and diff2 < tol
+
 if __name__ == '__main__':
+    print "Run tests with:\n>>> nosetests tests.py"
+    raw_input('Press enter to cnontinue...')
     test_constant()
+    test_plug()
