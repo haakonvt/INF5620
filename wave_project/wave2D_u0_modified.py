@@ -7,12 +7,12 @@ Original code: Hans Petter Langtangen (not much left of it...)
 """
 import time, sys
 try:
-    from scitools.std import linspace, newaxis, zeros, sqrt, exp, meshgrid, pi, cos
+    from scitools.std import linspace, newaxis, zeros, sqrt, exp, meshgrid, pi, cos, log
 except:
     print "Scitools not installed, exiting.."; sys.exit(1)
 
 def solver(I, V_, f_, c, Lx, Ly, Nx, Ny, dt, T, b,
-           user_action=None, version='scalar', skip_every_n_frame=10, show_cpu_time=False,display_warnings=True):
+           user_action=None, version='scalar', skip_every_n_frame=10, show_cpu_time=False,display_warnings=True, plotting=False):
 
     order = 'C' # Store arrays in a column-major order (in memory)
 
@@ -89,7 +89,10 @@ def solver(I, V_, f_, c, Lx, Ly, Nx, Ny, dt, T, b,
         u_1[:,:] = I(xv, yv)
 
     if user_action is not None:
-        user_action(u_1, x, xv, y, yv, t, 0, skip_every_n_frame)
+        if plotting:
+            user_action(u_1, x, xv, y, yv, t, 0, skip_every_n_frame)
+        else:
+            user_action(u_1, x, xv, y, yv, t, 0)
 
     # Special formula for first time step
     n = 0
@@ -104,7 +107,10 @@ def solver(I, V_, f_, c, Lx, Ly, Nx, Ny, dt, T, b,
                             dt2, dtdx2,dtdy2, V, step1=True)
 
     if user_action is not None:
-        user_action(u, x, xv, y, yv, t, 1, skip_every_n_frame)
+        if plotting:
+            user_action(u, x, xv, y, yv, t, 1, skip_every_n_frame)
+        else:
+            user_action(u_1, x, xv, y, yv, t, 1)
 
     # Update data structures for next step
     u_2, u_1, u = u_1, u, u_2
@@ -128,8 +134,12 @@ def solver(I, V_, f_, c, Lx, Ly, Nx, Ny, dt, T, b,
                 sys.stdout.flush()
 
         if user_action is not None:
-            if user_action(u, x, xv, y, yv, t, n+1, skip_every_n_frame):
-                break
+            if plotting:
+                if user_action(u, x, xv, y, yv, t, n+1, skip_every_n_frame):
+                    break
+            else:
+                if user_action(u, x, xv, y, yv, t, n+1):
+                    break
 
         # Update data structures for next step
         #u_2[:] = u_1;  u_1[:] = u  # safe, but slower
