@@ -1,5 +1,59 @@
 from main import plot_2D_wave
 from wave2D_u0_modified import *
+from numpy.linalg import norm
+
+class LastTimestep:
+    """Need class to save values (also after the call has been made)"""
+    def __call__(self, u, x, xv, y, yv, t, n):
+        last_timestep = len(t)-1
+        if n == last_timestep:
+            self.x = x.copy(); self.y = y.copy()
+            self.u = u.copy(); self.t = t[n]
+
+
+class FindError:
+    """Compute error values, and return convergence rates"""
+    def __init__(self, ue):
+        self.ue = ue
+        self.E  = 0
+        self.h  = 0
+
+    def __call__(self, u, x, xv, y, yv, t, n):
+        if n == 0:
+            self.h = t[1] - t[0]
+        last_timestep = len(t)-1
+        if n == last_timestep:
+            dx = x[1] - x[0];  dy = y[1] - y[0]
+            X,Y    = meshgrid(xv,yv)
+            u_e    = self.ue(X,Y,t[n])
+            u_e    = u_e.transpose()
+            self.E = sqrt(dx*dy)*norm(u-u_e)
+
+
+def test_standing_undamped_waves(A=0.2, mx=2., my=3., Lx=1., Ly=1.):
+    kx      = mx*pi/Lx; ky = my*pi/Ly
+    w       = sqrt(kx**2 + ky**2) # See report for derivation
+
+    ue = lambda x,y,t: A*cos(kx*x)*cos(ky*y)*cos(w*t)
+    I  = lambda x,y  : A*cos(kx*x)*cos(ky*y)
+    V  = lambda x,y  : 0
+    f  = lambda x,y,t: 0
+    c  = lambda x,y  : 1
+
+    E = []; h = []; T = 0.2; dt = -1
+    for i,Nx in enumerate([5,10,20,40,80,160,320]):
+        Ny = Nx
+        error = FindError(ue)
+
+        solver(I, V, f, c, Lx, Ly, Nx, Ny, dt, T, b=0,
+               user_action=error, version='vectorized', show_cpu_time=False)
+        E.append( error.E )
+        h.append( error.h )
+        ri = log(E[i]/E[i-1])/log(h[i]/h[i-1]) if i is not 0 else 0
+        print "dt =", h[i], "i =", i, "E =", E[i], "r =", ri
+    tol = 0.05
+    assert abs(ri-2) < tol # Check that we converge on r = 2
+
 
 def constant_solution(Nx, Ny, version):
 
@@ -37,13 +91,6 @@ def test_constant():
                 constant_solution(Nx, Ny, ver)
                 print '- largest error:', max(E)
 
-class LastTimestep:
-    """Need class to save values (also after the call has been made)"""
-    def __call__(self, u, x, xv, y, yv, t, n):
-        last_timestep = len(t)-1
-        if n == last_timestep:
-            self.x = x.copy(); self.y = y.copy()
-            self.u = u.copy(); self.t = t[n]
 
 def test_plug():
     """Check that an initial plug is correct back after one period."""
@@ -95,12 +142,10 @@ def test_plug():
         solver(Is, V, f, c, Lx, Ly, Nx, Ny, dt, T, b,
             user_action=lasttimestep, version='scalar',skip_every_n_frame=0, display_warnings=False)
         u_scalar = lasttimestep.u # Store last u
-        #solver(Is, V, f, c, Lx, Ly, Nx, Ny, dt, T, b, user_action=plot_2D_wave, version='scalar')
-        #raw_input('check frames and enter...')
+
         solver(Iv, V, f, c, Lx, Ly, Nx, Ny, dt, T, b,
             user_action=lasttimestep, version='vectorized',skip_every_n_frame=0, display_warnings=False)
         u_vec = lasttimestep.u
-        #solver(Iv, V, f, c, Lx, Ly, Nx, Ny, dt, T, b, user_action=plot_2D_wave, version='vectorized')
 
         diff = abs(u_scalar - u_vec).max()
         tol = 1E-15
@@ -114,6 +159,7 @@ def test_plug():
 
 if __name__ == '__main__':
     print "Run tests with:\n>>> nosetests tests.py"
-    raw_input('Press enter to cnontinue...')
+    raw_input('Press enter to cnontinue with testing directly...')
     test_constant()
     test_plug()
+    test_standing_undamped_waves()

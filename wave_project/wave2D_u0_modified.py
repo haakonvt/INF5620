@@ -7,7 +7,7 @@ Original code: Hans Petter Langtangen (not much left of it...)
 """
 import time, sys
 try:
-    from scitools.std import linspace, newaxis, zeros, sqrt, exp, meshgrid, pi, cos, log
+    from scitools.std import linspace, newaxis, zeros, sqrt, exp, meshgrid, pi, cos, log, movie
 except:
     print "Scitools not installed, exiting.."; sys.exit(1)
 
