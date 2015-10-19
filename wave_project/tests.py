@@ -40,23 +40,32 @@ def test_standing_undamped_waves(A=0.2, mx=2., my=3., Lx=1., Ly=1.):
     f  = lambda x,y,t: 0
     c  = lambda x,y  : 1
 
-    E = []; h = []; T = 0.2; dt = -1
-    for i,Nx in enumerate([5,10,20,40,80,160,320]):
+    E = []; h = []; T = 0.4; dt = -1
+    Nx_values = [5,10,20,40,80,160,320]
+    for i,Nx in enumerate(Nx_values):
         Ny = Nx
         error = FindError(ue)
-
         solver(I, V, f, c, Lx, Ly, Nx, Ny, dt, T, b=0,
                user_action=error, version='vectorized', show_cpu_time=False)
         E.append( error.E )
         h.append( error.h )
-        ri = log(E[i]/E[i-1])/log(h[i]/h[i-1]) if i is not 0 else 0
-        print "dt =", h[i], "i =", i, "E =", E[i], "r =", ri
+
+    # Print out convergence rates
+    print "---------------------------------------------------------"
+    print "N(i) | N(i+1) |  dt(i)    |  dt(i+1)  |   r(i)"
+    print "---------------------------------------------------------"
+    m = len(Nx_values)
+    r = [log(E[i-1]/E[i])/log(h[i-1]/h[i]) for i in range(1, m, 1)]
+    r = [round(r_, 4) for r_ in r] # Round to three decimals
+    for i in range(m-1):
+        print "%-3i     %-4i      %-9.3E   %-9.3E   %-5.4f" \
+            %(Nx_values[i], Nx_values[i+1], h[i], h[i+1], r[i])
+
     tol = 0.05
-    assert abs(ri-2) < tol # Check that we converge on r = 2
+    assert r[-1]-2 < tol # Check that we converge on r = 2
 
 
 def constant_solution(Nx, Ny, version):
-
     exact_solution = lambda x, y, t: 3
     I = lambda x, y   : 3
     V = lambda x, y   : 0
