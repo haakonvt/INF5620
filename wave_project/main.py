@@ -128,7 +128,7 @@ def plot_gauss_drop_corner():
 
 
 if __name__ == '__main__':
-    # plot_gauss_drop_corner() # Nice test-case, not part of the project
+    plot_gauss_drop_corner() # Nice test-case, not part of the project
 
     print """\n
     Investigate a physical problem, a tsunami over a subsea hill.
